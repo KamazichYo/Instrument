@@ -612,6 +612,11 @@ export function encodeWav(x, sr) {
 // Каждая группа — несколько кнопок. resolveSettings превращает выбор в числа для обработки.
 
 export const OPTIONS = {
+  ai: {
+    title: 'ИИ-очистка',
+    hint: 'Нейросеть DeepFilterNet3 убирает шум и эхо комнаты лучше обычных фильтров. Первый раз скачает модель (34 МБ).',
+    items: { off: 'Выкл', soft: 'Мягко', mid: 'Средне', max: 'Максимум' },
+  },
   pauses: {
     title: 'Паузы',
     hint: 'Длинные паузы укорачиваются. «Мягко» — если съедаются концы слов.',
@@ -645,9 +650,13 @@ export const OPTIONS = {
 };
 
 export const PRESETS = {
+  aiRoom: {
+    label: 'ИИ: голые стены',
+    pick: { ai: 'mid', pauses: 'normal', reverb: 'off', noise: 'off', tone: 'clear', level: 'light', loudness: 'social' },
+  },
   bareRoom: {
-    label: 'Комната с голыми стенами',
-    pick: { pauses: 'normal', reverb: 'mid', noise: 'mid', tone: 'clear', level: 'light', loudness: 'social' },
+    label: 'Без ИИ: голые стены',
+    pick: { ai: 'off', pauses: 'normal', reverb: 'mid', noise: 'mid', tone: 'clear', level: 'light', loudness: 'social' },
   },
   quiet: {
     label: 'Тихая обычная комната',
@@ -663,7 +672,10 @@ export const PRESETS = {
   },
 };
 
-export const DEFAULT_PICK = PRESETS.bareRoom.pick;
+export const DEFAULT_PICK = PRESETS.aiRoom.pick;
+
+// Группы, которые не нужны, когда работает ИИ (он уже убирает шум и эхо)
+export const AI_REPLACES = ['reverb', 'noise'];
 
 export function resolveSettings(pick) {
   const p = { ...DEFAULT_PICK, ...pick };
@@ -679,20 +691,26 @@ export function resolveSettings(pick) {
     mid: { reverb: 0.65, rt60: 0.7, expand: 0.4 },
     high: { reverb: 1, rt60: 0.9, expand: 0.8 },
   }[p.reverb];
-  const denoise = { off: 0, low: 0.3, mid: 0.55, high: 0.85 }[p.noise];
+  let denoise = { off: 0, low: 0.3, mid: 0.55, high: 0.85 }[p.noise];
+  // ИИ: предел подавления (дБ) и пост-фильтр DeepFilterNet
+  const ai = { off: null, soft: { atten: 14, beta: 0 }, mid: { atten: 30, beta: 0 }, max: { atten: 100, beta: 0.02 } }[p.ai || 'off'];
+  let rev = reverb;
+  if (ai) { denoise = 0; rev = { reverb: 0, rt60: 0.6, expand: 0 }; }
   const compress = { off: 0, light: 0.45, strong: 0.8 }[p.level];
   const target = { social: -14, podcast: -16, keep: null }[p.loudness];
   const deess = { none: 0, clear: 0.5, warm: 0.35, bright: 0.65 }[p.tone];
   return {
-    hpf: p.tone === 'none' && denoise === 0 && reverb.reverb === 0 ? 0 : 80,
+    hpf: p.tone === 'none' && denoise === 0 && rev.reverb === 0 && !ai ? 0 : 80,
     denoise, tone: p.tone, deess, compress, target,
-    ...reverb, ...pauses,
+    ai: ai ? ai.atten : 0, aiBeta: ai ? ai.beta : 0,
+    ...rev, ...pauses,
   };
 }
 
 // ---------- полная цепочка ----------
 
-export function processVoice(channels, sr, s, onProgress = () => {}) {
+// opts.enhance(x, onP) → Float32Array — ИИ-очистка (подключается в воркере, где загружена нейросеть).
+export function processVoice(channels, sr, s, onProgress = () => {}, opts = {}) {
   const t0 = Date.now();
   const report = (stage, p) => onProgress(stage, p);
   report('Подготовка', 0);
@@ -703,15 +721,24 @@ export function processVoice(channels, sr, s, onProgress = () => {}) {
   let clipped = 0;
   for (let i = 0; i < x.length; i++) if (Math.abs(x[i]) > 0.999) clipped++;
 
+  let noiseDb;
+  if (s.ai > 0 && opts.enhance) {
+    noiseDb = spectralClean(x, sr, {}).noiseDb; // только замер фона исходника
+    report('ИИ-очистка', 0.05);
+    x = opts.enhance(x, (p) => report('ИИ-очистка', 0.05 + p * 0.65));
+  }
   if (s.hpf > 0) highpass24(x, s.hpf, sr);
 
-  const stageName = s.reverb > 0 ? 'Убираю эхо и шум' : 'Шумодав';
-  report(stageName, 0.05);
-  const dn = spectralClean(
-    x, sr, { noise: s.denoise || 0, reverb: s.reverb || 0, rt60: s.rt60 || 0.7 },
-    (p) => report(stageName, 0.05 + p * 0.65),
-  );
-  x = dn.out;
+  if (!(s.ai > 0 && opts.enhance)) {
+    const stageName = s.reverb > 0 ? 'Убираю эхо и шум' : 'Шумодав';
+    report(stageName, 0.05);
+    const dn = spectralClean(
+      x, sr, { noise: s.denoise || 0, reverb: s.reverb || 0, rt60: s.rt60 || 0.7 },
+      (p) => report(stageName, 0.05 + p * 0.65),
+    );
+    x = dn.out;
+    noiseDb = dn.noiseDb;
+  }
 
   report('Поиск пауз', 0.72);
   let pauses;
@@ -771,7 +798,7 @@ export function processVoice(channels, sr, s, onProgress = () => {}) {
       outDuration: x.length / sr,
       removedSec,
       pausesCut: pauses.removed.length,
-      noiseDb: dn.noiseDb,
+      noiseDb,
       floorDb: pauses.floorDb,
       speechDb: pauses.speechDb,
       inLufs,

@@ -202,3 +202,30 @@ canvas.tap { cursor: pointer; }
 .lbtn.busy .i { animation: pulse 0.8s infinite alternate; }
 @keyframes pulse { from { opacity: .3; } to { opacity: 1; } }
 .listen-info { font-size: 12px; color: var(--muted); text-align: center; margin-top: 6px; }
+
+/* ---------- субтитры ---------- */
+.player { position: relative; margin-top: 10px; }
+.player video { width: 100%; max-height: 60vh; border-radius: 12px; background: #000; display: block; }
+.cap-overlay {
+  position: absolute; left: 8%; right: 8%; bottom: 18%; text-align: center; pointer-events: none;
+  font-weight: 800; font-size: 20px; line-height: 1.2; color: #fff; white-space: pre-line;
+  text-shadow: 0 0 4px #000, 0 2px 6px #000, 0 0 2px #000;
+}
+.cap-overlay:empty { display: none; }
+.cap-overlay.below {
+  position: static; margin-top: 10px; padding: 10px; border-radius: 12px; min-height: 48px;
+  background: var(--surface-2); color: var(--text); text-shadow: none;
+}
+.cap-overlay.below:empty { display: block; }
+.cues { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; margin: 6px 0 4px; }
+.cue { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: start; }
+.cue-time {
+  font: inherit; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--accent);
+  background: var(--surface-2); border: 0; border-radius: 8px; padding: 8px 8px; min-width: 56px;
+}
+.cue textarea {
+  font: inherit; font-size: 15px; color: var(--text); background: var(--surface-2); border: 1px solid transparent;
+  border-radius: 8px; padding: 7px 9px; resize: none; width: 100%; min-height: 36px;
+}
+.cue textarea:focus { outline: none; border-color: var(--accent); }
+.cue-del { background: none; border: 0; color: var(--muted); font-size: 15px; padding: 8px 4px; }

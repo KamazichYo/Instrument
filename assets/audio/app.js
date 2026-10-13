@@ -1,4 +1,5 @@
-import { OPTIONS, PRESETS, DEFAULT_PICK, resolveSettings } from './dsp.js';
+import { OPTIONS, PRESETS, DEFAULT_PICK, AI_REPLACES, resolveSettings } from './dsp.js';
+import { putHandoff } from '../shared/handoff.js';
 
 const $ = (id) => document.getElementById(id);
 const STORE_KEY = 'instrument.audio.pick.v2';
@@ -42,7 +43,9 @@ function renderPresets() {
 function renderOptions() {
   const box = $('options');
   box.innerHTML = '';
+  const aiOn = pick.ai && pick.ai !== 'off';
   for (const [group, def] of Object.entries(OPTIONS)) {
+    if (aiOn && AI_REPLACES.includes(group)) continue;
     const wrap = document.createElement('div');
     wrap.className = 'opt';
     wrap.innerHTML = `<div class="opt-title">${def.title}</div>`;
@@ -63,7 +66,7 @@ function renderOptions() {
     wrap.appendChild(seg);
     const hint = document.createElement('div');
     hint.className = 'opt-hint';
-    hint.textContent = def.hint;
+    hint.textContent = def.hint + (group === 'ai' && aiOn ? ' Шум и эхо убирает ИИ — отдельные настройки для них скрыты.' : '');
     wrap.appendChild(hint);
     box.appendChild(wrap);
   }
@@ -113,8 +116,9 @@ async function openFile(f) {
     // 48 кГц — родная частота iPhone: без лишнего пересэмплирования
     let ctx;
     try { ctx = new Ctx({ sampleRate: 48000 }); } catch { ctx = new Ctx(); }
-    const ab = await decodeAudio(ctx, buf);
+    let ab = await decodeAudio(ctx, buf);
     ctx.close && ctx.close();
+    if (ab.sampleRate !== 48000) ab = await resampleTo48k(ab);
     const channels = [];
     for (let c = 0; c < ab.numberOfChannels; c++) channels.push(ab.getChannelData(c));
     decoded = { channels, sampleRate: ab.sampleRate, duration: ab.duration, peaks: mixPeaks(channels) };
@@ -131,6 +135,17 @@ async function openFile(f) {
       'Не получилось прочитать звук из этого файла. Попробуйте m4a из Диктофона, mp3, wav или видео .mov/.mp4.';
     setRun(false, 'Выберите другой файл');
   }
+}
+
+// ИИ-модель работает в 48 кГц — приводим всё к ней (mp3 часто бывают 44.1 кГц).
+async function resampleTo48k(ab) {
+  const OC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const oc = new OC(ab.numberOfChannels, Math.ceil(ab.duration * 48000), 48000);
+  const src = oc.createBufferSource();
+  src.buffer = ab;
+  src.connect(oc.destination);
+  src.start();
+  return oc.startRendering();
 }
 
 function decodeAudio(ctx, buf) {
@@ -192,6 +207,8 @@ let playing = null; // null | 'orig' | 'proc'
 let previewWorker = null;
 let previewSeq = 0;
 let previewBusy = false;
+let currentJob = null;
+let pendingJob = null;
 const previewCache = new Map(); // ключ (выбор + кусок) → AudioBuffer: повторные переключения мгновенные
 
 function ensureAudio() {
@@ -205,9 +222,9 @@ function ensureAudio() {
   return audioCtx;
 }
 
-function excerptChannels() {
+function excerptChannels(start = excerptStart) {
   const sr = decoded.sampleRate;
-  const a = Math.round(excerptStart * sr);
+  const a = Math.round(start * sr);
   const b = Math.min(decoded.channels[0].length, a + PREVIEW_SEC * sr);
   return decoded.channels.map((c) => c.slice(a, b));
 }
@@ -231,6 +248,7 @@ function stopPlayback() {
   stopSource();
   playing = null;
   previewSeq++;
+  pendingJob = null;
   clearBusy();
   updateListenButtons();
 }
@@ -252,7 +270,7 @@ $('playProc').onclick = () => {
 
 // Оригинал тоже прогоняем через выравнивание громкости — чтобы сравнение было честным
 // (громче всегда кажется «лучше»).
-const ORIG_PICK = { pauses: 'off', reverb: 'off', noise: 'off', tone: 'none', level: 'off', loudness: 'social' };
+const ORIG_PICK = { ai: 'off', pauses: 'off', reverb: 'off', noise: 'off', tone: 'none', level: 'off', loudness: 'social' };
 
 function playOriginal() { renderAndPlay(ORIG_PICK, 'orig'); }
 function playProcessed() { renderAndPlay(pick, 'proc'); }
@@ -268,31 +286,51 @@ function renderAndPlay(p, which) {
   playing = which;
   const seq = ++previewSeq;
   setBusy(which, true);
-  // предыдущий расчёт уже не нужен — прерываем, чтобы не ждать его
-  if (previewWorker && previewBusy) { previewWorker.terminate(); previewWorker = null; }
-  if (!previewWorker) previewWorker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+  const job = { p, which, key, seq, start: excerptStart };
+  // Пока считается предыдущий вариант — запоминаем только самый последний запрос.
+  // Воркер не перезапускаем: так нейросеть не грузится заново при каждом нажатии.
+  if (previewBusy) { pendingJob = job; return; }
+  startJob(job);
+}
+
+function startJob(job) {
+  if (!previewWorker) {
+    previewWorker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+    previewWorker.onmessage = onPreviewMessage;
+  }
   previewBusy = true;
-  const channels = excerptChannels();
-  previewWorker.onmessage = (e) => {
-    const m = e.data;
-    if (m.type === 'progress') return;
-    if (m.id !== seq) return;
-    previewBusy = false;
-    if (seq !== previewSeq) return; // пользователь уже нажал что-то другое
-    setBusy(which, false);
-    if (m.type === 'error') { playing = null; updateListenButtons(); alert('Ошибка: ' + m.message); return; }
-    const ctx = ensureAudio();
-    const buf = ctx.createBuffer(1, Math.max(1, m.output.length), decoded.sampleRate);
-    buf.getChannelData(0).set(m.output);
-    previewCache.set(key, { buf, stats: m.stats });
-    if (previewCache.size > 16) previewCache.delete(previewCache.keys().next().value);
-    playBuffer(buf, which);
-    showPreviewStats(m.stats, which);
-  };
+  currentJob = job;
+  const channels = excerptChannels(job.start);
   previewWorker.postMessage(
-    { id: seq, channels, sampleRate: decoded.sampleRate, settings: resolveSettings(p), wav: false },
+    { id: job.seq, channels, sampleRate: decoded.sampleRate, settings: resolveSettings(job.p), wav: false },
     channels.map((c) => c.buffer),
   );
+}
+
+function onPreviewMessage(e) {
+  const m = e.data;
+  const job = currentJob;
+  if (!job || m.id !== job.seq) return;
+  if (m.type === 'progress') {
+    if (job.seq === previewSeq && m.stage !== 'Готово') updateListenInfo(`${m.stage}… ${Math.round(m.p * 100)}%`);
+    return;
+  }
+  previewBusy = false;
+  currentJob = null;
+  let buf = null;
+  if (m.type === 'done') {
+    const ctx = ensureAudio();
+    buf = ctx.createBuffer(1, Math.max(1, m.output.length), decoded.sampleRate);
+    buf.getChannelData(0).set(m.output);
+    previewCache.set(job.key, { buf, stats: m.stats });
+    if (previewCache.size > 16) previewCache.delete(previewCache.keys().next().value);
+  }
+  if (pendingJob) { const j = pendingJob; pendingJob = null; startJob(j); return; }
+  if (job.seq !== previewSeq) return; // пользователь уже нажал «стоп»
+  setBusy(job.which, false);
+  if (m.type === 'error') { playing = null; updateListenButtons(); updateListenInfo(); alert('Ошибка: ' + m.message); return; }
+  playBuffer(buf, job.which);
+  showPreviewStats(m.stats, job.which);
 }
 
 function setBusy(which, on) {
@@ -378,6 +416,8 @@ function done({ output, wav, removed, stats }) {
   $('playOut').src = outUrl;
   $('download').href = outUrl;
   $('download').download = outName();
+  // для «Субтитров»: тайминг совпадёт с порезанным звуком
+  putHandoff('lastAudio', { blob: resultBlob, name: outName(), date: Date.now() });
 
   const st = stats;
   $('stats').innerHTML = [
@@ -389,7 +429,7 @@ function done({ output, wav, removed, stats }) {
 
   const notes = [];
   if (st.clippedMs > 5) notes.push(['warn', `В исходнике есть перегруз (~${Math.round(st.clippedMs)} мс) — хрипы не убрать. В следующий раз держите телефон чуть дальше ото рта.`]);
-  if (st.noiseDb > -45) notes.push(['warn', 'Фон громкий. Если голос звучит «жёвано» — поставьте «Шум: Слабо» и попробуйте записать в более тихом месте.']);
+  if (st.noiseDb > -45) notes.push(['warn', (pick.ai !== 'off' ? 'Фон громкий. Если голос звучит «жёвано» — поставьте «ИИ-очистка: Мягко».' : 'Фон громкий. Попробуйте «ИИ-очистку» или «Шум: Сильно». Если голос звучит «жёвано» — ослабьте.')]);
   if (st.speechDb - st.floorDb < 15 && pick.pauses !== 'off') notes.push(['', 'Речь почти не отличается от фона по громкости — паузы могли найтись неточно. Если съедаются слова — «Паузы: Мягко».']);
   notes.push(['', `Обработано за ${(st.ms / 1000).toFixed(1)} с.`]);
   $('notes').innerHTML = notes.map(([c, t]) => `<div class="note ${c}">${t}</div>`).join('');

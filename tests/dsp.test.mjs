@@ -6,7 +6,8 @@ import {
   PRESETS, OPTIONS, resolveSettings, DEFAULT_PICK,
 } from '../assets/audio/dsp.js';
 
-const VOICE = resolveSettings(DEFAULT_PICK);
+// без ИИ: здесь проверяем «обычную» обработку (ИИ — в ai.test.mjs)
+const VOICE = resolveSettings(PRESETS.bareRoom.pick);
 
 const SR = 48000;
 
