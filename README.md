@@ -53,4 +53,4 @@ tests/                  тесты: npm test
 Новый инструмент = папка со своей `index.html` + плитка в `index.html` + файлы в `sw.js`.
 
 ## Публикация
-GitHub Pages: Settings → Pages → Source: *Deploy from a branch* → `main` / `(root)`.
+GitHub Pages: Settings → Pages → Source: **GitHub Actions**. Каждый пуш в `main` прогоняет тесты и публикует сайт (`.github/workflows/pages.yml`).
