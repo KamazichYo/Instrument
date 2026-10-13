@@ -20,7 +20,7 @@
       <a class="back" href="../">‹ Инструменты</a>
     </header>
     <h1 class="big-title">Субтитры</h1>
-    <p class="sub">Распознаёт русскую речь прямо на телефоне и делает файл субтитров .srt для монтажа.</p>
+    <p class="sub">Распознаёт русскую речь прямо на телефоне и вшивает субтитры в видео. Лучше всего — на уже смонтированный ролик из CapCut или Edits.</p>
 
     <!-- 1. Источник -->
     <section id="pickBox">
@@ -28,7 +28,7 @@
       <label class="pick" id="pick">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 15h4M13 15h5M6 11h8"/></svg>
         <b>Выбрать видео или звук</b>
-        <span class="muted small">Ролик из Фото, запись Диктофона, wav после «Звука»</span>
+        <span class="muted small">Готовый ролик из Фото (после CapCut / Edits) или звук</span>
         <input type="file" id="file" accept="video/*,audio/*,.m4a,.mp3,.wav,.mov,.mp4">
       </label>
     </section>
@@ -41,6 +41,7 @@
       <div class="muted small" id="fileInfo"></div>
       <div class="player" id="player">
         <video id="video" playsinline controls class="hidden"></video>
+        <canvas class="overlay" id="overlay"></canvas>
         <audio id="audio" controls class="hidden"></audio>
         <div class="cap-overlay" id="capNow"></div>
       </div>
@@ -62,14 +63,28 @@
       <h2>Субтитры <span class="muted small" id="cueCount"></span></h2>
       <p class="muted small">Нажмите на время — проиграется этот кусок. Текст можно исправить прямо здесь.</p>
       <div id="cues" class="cues"></div>
+      <button class="btn" id="burn">Вшить субтитры в видео</button>
+      <div class="hidden" id="burnBusy" style="margin-top:10px">
+        <div class="ctl-head"><span>Делаю видео с субтитрами…</span><output id="burnPct">0%</output></div>
+        <div class="progress"><div id="burnBar"></div></div>
+        <div class="muted small">Не блокируйте экран. Звук копируется как есть, без потери качества.</div>
+      </div>
       <div class="btn-row">
-        <button class="btn" id="saveSrt">Сохранить .srt</button>
+        <button class="btn ghost" id="saveSrt">Файл .srt</button>
         <button class="btn ghost" id="copyText">Копировать текст</button>
       </div>
       <button class="link-btn" id="saveVtt" style="margin-top:8px">Сохранить .vtt (для YouTube и веба)</button>
       <div class="note small">
-        <b>Куда вставлять .srt:</b> CapCut на компьютере (импорт субтитров), Premiere, DaVinci Resolve, Final Cut, YouTube Studio. Субтитры совпадут по времени с тем файлом, из которого сделаны.
+        <b>CapCut и Edits на телефоне</b> не умеют загружать файл .srt — поэтому лучше «Вшить субтитры в видео»: готовый ролик сохранится в Фото.
+        Файл .srt подойдёт для CapCut на компьютере, Premiere, DaVinci Resolve и YouTube Studio.
       </div>
+    </section>
+
+    <section class="card hidden" id="burnResult">
+      <h2>Видео с субтитрами <span class="muted small" id="burnInfo"></span></h2>
+      <video id="burnVideo" playsinline controls class="result-video"></video>
+      <button class="btn" id="saveVideo" style="margin-top:10px">Сохранить видео</button>
+      <p class="muted small">В меню выберите «Сохранить видео» — ролик появится в Фото, оттуда его можно загрузить в Edits, Reels или Shorts.</p>
     </section>
   </main>
 

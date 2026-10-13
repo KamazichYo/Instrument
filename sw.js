@@ -1,5 +1,5 @@
 // Офлайн-режим: сначала сеть (всегда свежая версия), без сети — из кэша.
-const CACHE = 'instrument-v4';
+const CACHE = 'instrument-v5';
 const SHELL = [
   './',
   'index.html',
@@ -18,6 +18,9 @@ const SHELL = [
   'assets/subs/app.js',
   'assets/subs/cues.js',
   'assets/subs/asr-worker.js',
+  'assets/subs/render.js',
+  'assets/subs/burn.js',
+  'assets/vendor/mediabunny/mediabunny.min.mjs',
   'icons/icon-180.png',
   'icons/icon-192.png',
 ];

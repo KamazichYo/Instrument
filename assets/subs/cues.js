@@ -97,7 +97,8 @@ export function buildCues(words, styleId = 'classic') {
     c.end = Math.max(c.end, Math.min(want, limit));
     c.text = layoutText(c.words.map((w) => w.text).join('').trim(), st.lineChars);
   }
-  return cues.map(({ start, end, text }) => ({ start, end, text }));
+  // слова оставляем — по ним подсвечивается текущее слово при вшивании в видео
+  return cues.map(({ start, end, text, words }) => ({ start, end, text, words }));
 }
 
 // Делим на 2 строки по ближайшему к середине пробелу

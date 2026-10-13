@@ -1,5 +1,7 @@
 import { STYLES, CASES, buildCues, cleanWords, toSRT, toVTT, toText, applyCase, splitWindows } from './cues.js';
 import { getHandoff } from '../shared/handoff.js';
+import { LOOKS, PLACES, SIZES, drawCaption, findCue } from './render.js';
+import { burnSubtitles, canBurn } from './burn.js';
 
 const $ = (id) => document.getElementById(id);
 const STORE_KEY = 'instrument.subs.pick.v1';
@@ -20,6 +22,10 @@ const OPTIONS = {
     hint: '«Без точек» — как обычно делают в Shorts и Reels.',
     items: CASES,
   },
+  // как субтитры выглядят в кадре — только для видео (предпросмотр сразу в плеере)
+  look: { title: 'Вид в кадре', hint: '«Акцент» подсвечивает слово, которое сейчас звучит.', items: LOOKS, videoOnly: true },
+  place: { title: 'Где', hint: '«Низ» — чуть выше середины нижней части: там текст не закрывают кнопки Reels и Shorts.', items: PLACES, videoOnly: true },
+  size: { title: 'Размер', hint: '', items: SIZES, videoOnly: true },
 };
 
 let pick = loadPick();
@@ -31,9 +37,11 @@ let cues = [];            // текущие субтитры (с правкам�
 let edited = false;
 let mediaUrl = null;
 let lastModel = null;
+let isVideo = false;
+let burnedBlob = null;
 
 function loadPick() {
-  const def = { model: 'accurate', style: 'shorts', textCase: 'nodots' };
+  const def = { model: 'accurate', style: 'shorts', textCase: 'nodots', look: 'accent', place: 'bottom', size: 'm' };
   try { return { ...def, ...JSON.parse(localStorage.getItem(STORE_KEY) || '{}') }; } catch { return def; }
 }
 function savePick() { try { localStorage.setItem(STORE_KEY, JSON.stringify(pick)); } catch {} }
@@ -44,6 +52,7 @@ function renderOptions() {
   const box = $('options');
   box.innerHTML = '';
   for (const [group, def] of Object.entries(OPTIONS)) {
+    if (def.videoOnly && !isVideo) continue;
     const wrap = document.createElement('div');
     wrap.className = 'opt';
     wrap.innerHTML = `<div class="opt-title">${def.title}</div>`;
@@ -77,6 +86,7 @@ function choose(group, val) {
   renderOptions();
   if (words && group === 'style') { rebuild(); }
   else if (words && group === 'textCase') { renderCues(); }
+  drawOverlay();
   if (group === 'model' && words) setRun(true, lastModel === val ? 'Распознать заново' : 'Распознать моделью «' + OPTIONS.model.items[val].split(' ·')[0] + '»');
 }
 
@@ -117,7 +127,11 @@ async function openMedia(f, name) {
 
   if (mediaUrl) URL.revokeObjectURL(mediaUrl);
   mediaUrl = URL.createObjectURL(f);
-  const isVideo = (f.type || '').startsWith('video/') || /\.(mov|mp4|m4v)$/i.test(fileName);
+  isVideo = (f.type || '').startsWith('video/') || /\.(mov|mp4|m4v|webm)$/i.test(fileName);
+  burnedBlob = null;
+  $('burnResult').classList.add('hidden');
+  $('burn').classList.toggle('hidden', !isVideo || !canBurn());
+  renderOptions();
   $('video').classList.toggle('hidden', !isVideo);
   $('audio').classList.toggle('hidden', isVideo);
   media().src = mediaUrl;
@@ -213,6 +227,7 @@ function progress(stage, p) {
 function rebuild(partial = false) {
   cues = buildCues(words || [], pick.style);
   renderCues();
+  drawOverlay();
   if (!partial || cues.length) $('result').classList.remove('hidden');
 }
 
@@ -254,14 +269,88 @@ function fit(ta) {
   ta.style.height = ta.scrollHeight + 2 + 'px';
 }
 
-// текущий субтитр поверх видео (или под плеером для звука)
-for (const el of [$('video'), $('audio')]) {
-  el.addEventListener('timeupdate', () => {
-    const t = el.currentTime;
-    const c = cues.find((q) => t >= q.start && t < q.end);
-    $('capNow').textContent = c ? caseOf(c) : '';
-  });
+// Звук: текущая фраза текстом под плеером
+$('audio').addEventListener('timeupdate', () => {
+  const c = findCue(cues, $('audio').currentTime);
+  $('capNow').textContent = c ? caseOf(c) : '';
+});
+
+// Видео: субтитр рисуется поверх кадра тем же кодом, что и при вшивании
+function burnOpts() { return { look: pick.look, place: pick.place, size: pick.size, caseMode: pick.textCase }; }
+function drawOverlay() {
+  const v = $('video'), cv = $('overlay');
+  if (!isVideo || !v.videoWidth) return;
+  const dpr = window.devicePixelRatio || 1;
+  const bw = v.clientWidth, bh = v.clientHeight;
+  cv.width = Math.round(bw * dpr); cv.height = Math.round(bh * dpr);
+  const g = cv.getContext('2d');
+  g.clearRect(0, 0, cv.width, cv.height);
+  // где внутри плеера сам кадр (по бокам/сверху бывают поля)
+  const k = Math.min(bw / v.videoWidth, bh / v.videoHeight);
+  const fw = v.videoWidth * k, fh = v.videoHeight * k;
+  g.save();
+  g.scale(dpr, dpr);
+  g.translate((bw - fw) / 2, (bh - fh) / 2);
+  const t = v.currentTime;
+  // если пауза между фразами — показываем ближайшую, чтобы было видно, как выглядит
+  const cue = findCue(cues, t) || (v.paused ? cues.find((c) => c.start >= t) || cues[0] : null);
+  drawCaption(g, fw, fh, cue, t, burnOpts());
+  g.restore();
 }
+function overlayLoop() {
+  drawOverlay();
+  if (!$('video').paused) requestAnimationFrame(overlayLoop);
+}
+for (const ev of ['play', 'seeked', 'loadedmetadata', 'pause']) $('video').addEventListener(ev, () => requestAnimationFrame(overlayLoop));
+window.addEventListener('resize', drawOverlay);
+
+// ---------- вшивание в видео ----------
+
+$('burn').onclick = async () => {
+  if (!cues.length) return;
+  $('burn').disabled = true;
+  $('video').pause();
+  $('burnBusy').classList.remove('hidden');
+  $('burnResult').classList.add('hidden');
+  burnProgress(0);
+  const lock = await wakeLock();
+  try {
+    burnedBlob = await burnSubtitles(file, exportCuesForBurn(), burnOpts(), burnProgress);
+    const url = URL.createObjectURL(burnedBlob);
+    $('burnVideo').src = url;
+    $('burnInfo').textContent = mb(burnedBlob.size);
+    $('burnResult').classList.remove('hidden');
+    $('burnResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (err) {
+    console.error(err);
+    alert('Не получилось: ' + (err.message || err));
+  } finally {
+    $('burnBusy').classList.add('hidden');
+    $('burn').disabled = false;
+    lock && lock.release && lock.release().catch(() => {});
+  }
+};
+
+function burnProgress(p) {
+  $('burnPct').textContent = Math.round(p * 100) + '%';
+  $('burnBar').style.width = (p * 100).toFixed(1) + '%';
+}
+
+// для вшивания: правленые фразы рисуются как написаны, остальные — с подсветкой слов
+function exportCuesForBurn() { return cues.map((c) => ({ ...c })); }
+
+$('saveVideo').onclick = async () => {
+  if (!burnedBlob) return;
+  const name = fileName.replace(/\.[^.]+$/, '') + '_subs.mp4';
+  const f = new File([burnedBlob], name, { type: 'video/mp4' });
+  if (navigator.canShare && navigator.canShare({ files: [f] })) {
+    try { await navigator.share({ files: [f] }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(f);
+  a.download = name;
+  a.click();
+};
 
 function caseOf(c) { return c.manual ? c.text : applyCase(c.text, pick.textCase); }
 function exportCues() { return cues.map((c) => ({ ...c, text: caseOf(c) })); }
