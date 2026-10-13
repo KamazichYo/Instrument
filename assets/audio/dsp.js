@@ -1,8 +1,8 @@
 // Обработка голоса: чистый JS без зависимостей.
 // Работает и в Web Worker (браузер), и в Node (тесты).
 //
-// Цепочка: моно → срез низов (HPF) → шумодав (спектральный, Wiener + decision-directed)
-//          → поиск пауз → EQ голоса → де-эссер → компрессор → вырезание пауз
+// Цепочка: моно → срез низов (HPF) → шумодав + подавление эха (спектральный, Wiener)
+//          → поиск пауз → дожим хвостов → тембр → де-эссер → компрессор → вырезание пауз
 //          → нормализация громкости (LUFS, BS.1770) → лимитер.
 
 // ---------- утилиты ----------
@@ -142,11 +142,16 @@ function makeFFT(n) {
   return transform;
 }
 
-// ---------- шумодав ----------
-// strength 0..1. Профиль шума берётся из самых тихих кусков записи
-// (паузы между фразами), поэтому отдельно «снимать шум» не нужно.
+// ---------- шумодав + подавление эха комнаты ----------
+// Один проход STFT убирает сразу два «мусора»:
+//  • стационарный шум — профиль берётся из самых тихих кусков записи (паузы между фразами);
+//  • позднюю реверберацию (голые стены, «банка») — по модели Лебарта: хвост эха в момент t
+//    ≈ энергия того же сигнала T мс назад, затухшая по экспоненте с заданным RT60.
+// Шум давится Wiener-фильтром с decision-directed оценкой SNR (меньше «булькающих» артефактов),
+// эхо — спектральным вычитанием предсказанного хвоста.
 
-export function denoise(x, sr, strength, onProgress) {
+export function spectralClean(x, sr, opts = {}, onProgress) {
+  const { noise = 0, reverb = 0, rt60 = 0.7 } = opts;
   const len = x.length;
   const N = sr > 32000 ? 2048 : 1024;
   const hop = N / 4;
@@ -176,39 +181,50 @@ export function denoise(x, sr, strength, onProgress) {
   const quietLimit = percentile(live, 0.12);
 
   // 2) средний спектр шума по тихим кадрам
-  const noise = new Float64Array(bins);
+  const ns = new Float64Array(bins);
   const re = new Float64Array(N);
   const im = new Float64Array(N);
-  let count = 0;
-  for (let f = 0; f < frames; f++) {
-    if (energy[f] > quietLimit || energy[f] <= 1e-12) continue;
-    const s = startOf(f);
-    for (let i = 0; i < N; i++) {
-      const j = s + i;
-      re[i] = j >= 0 && j < len ? x[j] * win[i] : 0;
-      im[i] = 0;
+  {
+    const acc = new Float64Array(bins);
+    let count = 0;
+    for (let f = 0; f < frames; f++) {
+      if (energy[f] > quietLimit || energy[f] <= 1e-12) continue;
+      const s = startOf(f);
+      for (let i = 0; i < N; i++) {
+        const j = s + i;
+        re[i] = j >= 0 && j < len ? x[j] * win[i] : 0;
+        im[i] = 0;
+      }
+      fft(re, im, false);
+      for (let k = 0; k < bins; k++) acc[k] += re[k] * re[k] + im[k] * im[k];
+      count++;
     }
-    fft(re, im, false);
-    for (let k = 0; k < bins; k++) noise[k] += re[k] * re[k] + im[k] * im[k];
-    count++;
-  }
-  for (let k = 0; k < bins; k++) noise[k] = noise[k] / Math.max(1, count) + 1e-14;
-  // лёгкое сглаживание профиля по частоте
-  const ns = new Float64Array(bins);
-  for (let k = 0; k < bins; k++) {
-    const a = noise[Math.max(0, k - 1)], b = noise[k], c = noise[Math.min(bins - 1, k + 1)];
-    ns[k] = (a + 2 * b + c) / 4;
+    for (let k = 0; k < bins; k++) acc[k] = acc[k] / Math.max(1, count) + 1e-14;
+    for (let k = 0; k < bins; k++) {
+      const a = acc[Math.max(0, k - 1)], b = acc[k], c = acc[Math.min(bins - 1, k + 1)];
+      ns[k] = (a + 2 * b + c) / 4;
+    }
   }
   let noiseSum = 0;
   for (let k = 0; k < bins; k++) noiseSum += ns[k];
-  // уровень шума в дБFS (приблизительно; сумма окна sqrt-hann^2 = N/2)
   const noiseDb = powToDb((2 * noiseSum) / (N * (N / 2)));
 
-  if (strength <= 0) return { out: Float32Array.from(x), noiseDb };
+  if (noise <= 0 && reverb <= 0) return { out: Float32Array.from(x), noiseDb };
 
-  // 3) подавление: Wiener-фильтр с decision-directed оценкой SNR (меньше «музыкального шума»)
-  const over = 1 + 1.5 * strength; // пересубтракция
-  const minGain = dbToGain(-(6 + 18 * strength)); // макс. подавление 6..24 дБ
+  // параметры шума
+  const over = 1 + 1.5 * noise;
+  const noiseFloorDb = noise > 0 ? 6 + 18 * noise : 0;
+  // параметры эха
+  const useRev = reverb > 0;
+  const D = Math.max(1, Math.round((0.05 * sr) / hop));        // ~50 мс: раннее отражение оставляем
+  const delta = (3 * Math.LN10) / rt60;
+  const revScale = (0.6 + 1.2 * reverb) * Math.exp((-2 * delta * D * hop) / sr);
+  const revFloorDb = useRev ? 8 + 12 * reverb : 0;
+  const hist = useRev ? Array.from({ length: D }, () => new Float64Array(bins)) : null;
+  const psd = new Float64Array(bins);
+  const psdA = 0.5; // сглаживание оценки мощности по времени
+
+  const minGain = dbToGain(-Math.max(noiseFloorDb, revFloorDb));
   const alphaDD = 0.98;
   const prevA2 = new Float64Array(bins);
   const gain = new Float64Array(bins);
@@ -224,12 +240,25 @@ export function denoise(x, sr, strength, onProgress) {
       im[i] = 0;
     }
     fft(re, im, false);
+    const slot = useRev ? hist[f % D] : null;
     for (let k = 0; k < bins; k++) {
       const P = re[k] * re[k] + im[k] * im[k];
-      const Nk = ns[k] * over;
-      const gamma = P / Nk;
-      const xi = alphaDD * (prevA2[k] / Nk) + (1 - alphaDD) * Math.max(gamma - 1, 0);
-      let g = xi / (1 + xi);
+      // шум: Wiener + decision-directed
+      let g = 1;
+      if (noise > 0) {
+        const I = ns[k] * over;
+        const gamma = P / I;
+        const xi = alphaDD * (prevA2[k] / I) + (1 - alphaDD) * Math.max(gamma - 1, 0);
+        g = xi / (1 + xi);
+      }
+      // эхо: спектральное вычитание предсказанного хвоста. Сильный прямой звук почти
+      // не трогается, а там, где сейчас звучит в основном хвост, — давится до пола.
+      if (useRev) {
+        psd[k] = psdA * psd[k] + (1 - psdA) * P;
+        const R = revScale * slot[k]; // в слоте — сглаженная мощность D кадров назад
+        slot[k] = psd[k];
+        g *= Math.sqrt(Math.max(1 - R / (psd[k] + 1e-20), 0));
+      }
       if (g < minGain) g = minGain;
       gain[k] = g;
     }
@@ -253,6 +282,33 @@ export function denoise(x, sr, strength, onProgress) {
     if (onProgress && (f & 255) === 0) onProgress(f / frames);
   }
   return { out, noiseDb };
+}
+
+export function denoise(x, sr, strength, onProgress) {
+  return spectralClean(x, sr, { noise: strength }, onProgress);
+}
+
+// ---------- дожим хвостов (экспандер) ----------
+// Всё, что заметно тише речи (хвосты эха, дыхание, фон между словами), опускается ещё ниже.
+
+export function expand(x, sr, amount, speechDb, floorDb) {
+  if (amount <= 0 || !(speechDb > floorDb)) return x;
+  const thr = floorDb + (speechDb - floorDb) * (0.35 + 0.15 * amount);
+  const ratio = 1.5 + 1.5 * amount;   // ниже порога: каждый дБ превращается в ratio дБ
+  const maxRed = 6 + 10 * amount;
+  const det = Math.exp(-1 / (0.008 * sr));
+  const att = Math.exp(-1 / (0.002 * sr)); // быстро открываемся на начале слова
+  const rel = Math.exp(-1 / (0.06 * sr));
+  let e = 0, red = 0;
+  for (let i = 0; i < x.length; i++) {
+    const v = x[i];
+    e = det * e + (1 - det) * v * v;
+    const under = thr - powToDb(e);
+    const target = under > 0 ? Math.min(maxRed, under * (ratio - 1)) : 0;
+    red = target < red ? att * red + (1 - att) * target : rel * red + (1 - rel) * target;
+    x[i] = v * dbToGain(-red);
+  }
+  return x;
 }
 
 // ---------- уровни по кадрам ----------
@@ -369,17 +425,35 @@ export function spliceSegments(x, sr, keep) {
   return out;
 }
 
-// ---------- EQ голоса ----------
-// Под iPhone: убрать «коробку» 250–400 Гц, добавить разборчивости 3–5 кГц и «воздуха».
+// ---------- тембр голоса ----------
+// Профили под iPhone в комнате: убрать «коробку» 250–450 Гц, добавить разборчивость 3–5 кГц.
 
-export function voiceEQ(x, sr, amount, warmth = 0) {
-  if (amount <= 0 && warmth === 0) return x;
-  const a = amount;
-  if (warmth !== 0) applyBiquad(x, biquad('lowshelf', 140, sr, 0.7, warmth));
-  if (a > 0) {
-    applyBiquad(x, biquad('peak', 320, sr, 1.0, -3.5 * a));   // «бубнёж», коробка
-    applyBiquad(x, biquad('peak', 3800, sr, 0.9, 3.5 * a));   // разборчивость
-    if (sr >= 32000) applyBiquad(x, biquad('highshelf', 10000, sr, 0.7, 2.5 * a)); // воздух
+export const TONES = {
+  none: [],
+  clear: [ // чётче — по умолчанию
+    ['peak', 300, 1.0, -4],
+    ['peak', 3800, 0.9, 3],
+    ['highshelf', 10000, 0.7, 2],
+  ],
+  warm: [ // теплее, мягче — если голос тонкий или резкий
+    ['lowshelf', 140, 0.7, 2.5],
+    ['peak', 350, 1.0, -2],
+    ['peak', 3000, 0.8, 1.5],
+    ['highshelf', 9000, 0.7, -1],
+  ],
+  bright: [ // ярко, «радио» — максимум разборчивости
+    ['peak', 220, 0.9, -2],
+    ['peak', 450, 1.2, -3],
+    ['peak', 4000, 0.8, 4.5],
+    ['highshelf', 10000, 0.7, 3.5],
+  ],
+};
+
+export function voiceEQ(x, sr, tone = 'clear') {
+  const bands = typeof tone === 'string' ? TONES[tone] || [] : tone;
+  for (const [type, f, q, g] of bands) {
+    if (f >= sr * 0.45) continue;
+    applyBiquad(x, biquad(type, f, sr, q, g));
   }
   return x;
 }
@@ -534,35 +608,87 @@ export function encodeWav(x, sr) {
   return buf;
 }
 
-// ---------- пресеты ----------
+// ---------- варианты (то, что видно в интерфейсе) ----------
+// Каждая группа — несколько кнопок. resolveSettings превращает выбор в числа для обработки.
 
-export const PRESETS = {
-  voice: {
-    label: 'Голос для ролика',
-    hpf: 80, denoise: 0.5, eq: 0.7, warmth: 0, deess: 0.5, compress: 0.6,
-    cut: true, minPause: 0.3, keepPause: 0.12, sensitivity: 0.5, target: -14,
+export const OPTIONS = {
+  pauses: {
+    title: 'Паузы',
+    hint: 'Длинные паузы укорачиваются. «Мягко» — если съедаются концы слов.',
+    items: { off: 'Не резать', soft: 'Мягко', normal: 'Обычно', tight: 'Плотно' },
   },
-  tight: {
-    label: 'Плотно (Shorts/Reels)',
-    hpf: 90, denoise: 0.55, eq: 0.8, warmth: 0, deess: 0.55, compress: 0.75,
-    cut: true, minPause: 0.2, keepPause: 0.05, sensitivity: 0.6, target: -14,
+  reverb: {
+    title: 'Эхо комнаты',
+    hint: 'Голые стены, «звук из банки», звон. Слишком сильно — голос становится сухим и «жёваным».',
+    items: { off: 'Выкл', low: 'Слабо', mid: 'Средне', high: 'Сильно' },
   },
-  noisy: {
-    label: 'Шумная комната',
-    hpf: 100, denoise: 0.85, eq: 0.6, warmth: 1, deess: 0.4, compress: 0.6,
-    cut: true, minPause: 0.3, keepPause: 0.12, sensitivity: 0.45, target: -14,
+  noise: {
+    title: 'Шум',
+    hint: 'Гул, шипение, вентилятор, улица.',
+    items: { off: 'Выкл', low: 'Слабо', mid: 'Средне', high: 'Сильно' },
   },
-  soft: {
-    label: 'Мягко, естественно',
-    hpf: 70, denoise: 0.3, eq: 0.4, warmth: 0, deess: 0.3, compress: 0.35,
-    cut: true, minPause: 0.5, keepPause: 0.25, sensitivity: 0.4, target: -16,
+  tone: {
+    title: 'Голос',
+    hint: 'Тембр. Послушайте каждый — выберите, где голос звучит естественнее.',
+    items: { none: 'Как есть', clear: 'Чётче', warm: 'Теплее', bright: 'Ярко' },
   },
-  cutOnly: {
-    label: 'Только вырезать паузы',
-    hpf: 0, denoise: 0, eq: 0, warmth: 0, deess: 0, compress: 0,
-    cut: true, minPause: 0.3, keepPause: 0.12, sensitivity: 0.5, target: null,
+  level: {
+    title: 'Ровность',
+    hint: 'Тихие и громкие слова становятся ближе по громкости.',
+    items: { off: 'Выкл', light: 'Слегка', strong: 'Сильно' },
+  },
+  loudness: {
+    title: 'Громкость',
+    hint: 'Итоговая громкость файла.',
+    items: { social: 'Соцсети', podcast: 'Подкаст', keep: 'Не менять' },
   },
 };
+
+export const PRESETS = {
+  bareRoom: {
+    label: 'Комната с голыми стенами',
+    pick: { pauses: 'normal', reverb: 'mid', noise: 'mid', tone: 'clear', level: 'light', loudness: 'social' },
+  },
+  quiet: {
+    label: 'Тихая обычная комната',
+    pick: { pauses: 'normal', reverb: 'low', noise: 'low', tone: 'clear', level: 'light', loudness: 'social' },
+  },
+  shorts: {
+    label: 'Плотно для Shorts',
+    pick: { pauses: 'tight', reverb: 'mid', noise: 'mid', tone: 'bright', level: 'strong', loudness: 'social' },
+  },
+  cutOnly: {
+    label: 'Только паузы',
+    pick: { pauses: 'normal', reverb: 'off', noise: 'off', tone: 'none', level: 'off', loudness: 'keep' },
+  },
+};
+
+export const DEFAULT_PICK = PRESETS.bareRoom.pick;
+
+export function resolveSettings(pick) {
+  const p = { ...DEFAULT_PICK, ...pick };
+  const pauses = {
+    off: { cut: false },
+    soft: { cut: true, minPause: 0.5, keepPause: 0.25, sensitivity: 0.35 },
+    normal: { cut: true, minPause: 0.3, keepPause: 0.12, sensitivity: 0.5 },
+    tight: { cut: true, minPause: 0.2, keepPause: 0.05, sensitivity: 0.6 },
+  }[p.pauses];
+  const reverb = {
+    off: { reverb: 0, rt60: 0.6, expand: 0 },
+    low: { reverb: 0.35, rt60: 0.5, expand: 0 },
+    mid: { reverb: 0.65, rt60: 0.7, expand: 0.4 },
+    high: { reverb: 1, rt60: 0.9, expand: 0.8 },
+  }[p.reverb];
+  const denoise = { off: 0, low: 0.3, mid: 0.55, high: 0.85 }[p.noise];
+  const compress = { off: 0, light: 0.45, strong: 0.8 }[p.level];
+  const target = { social: -14, podcast: -16, keep: null }[p.loudness];
+  const deess = { none: 0, clear: 0.5, warm: 0.35, bright: 0.65 }[p.tone];
+  return {
+    hpf: p.tone === 'none' && denoise === 0 && reverb.reverb === 0 ? 0 : 80,
+    denoise, tone: p.tone, deess, compress, target,
+    ...reverb, ...pauses,
+  };
+}
 
 // ---------- полная цепочка ----------
 
@@ -579,25 +705,34 @@ export function processVoice(channels, sr, s, onProgress = () => {}) {
 
   if (s.hpf > 0) highpass24(x, s.hpf, sr);
 
-  report('Шумодав', 0.05);
-  const dn = denoise(x, sr, s.denoise, (p) => report('Шумодав', 0.05 + p * 0.65));
+  const stageName = s.reverb > 0 ? 'Убираю эхо и шум' : 'Шумодав';
+  report(stageName, 0.05);
+  const dn = spectralClean(
+    x, sr, { noise: s.denoise || 0, reverb: s.reverb || 0, rt60: s.rt60 || 0.7 },
+    (p) => report(stageName, 0.05 + p * 0.65),
+  );
   x = dn.out;
 
   report('Поиск пауз', 0.72);
-  const pauses = s.cut
-    ? findPauses(x, sr, { minPause: s.minPause, keepPause: s.keepPause, sensitivity: s.sensitivity })
-    : { keep: [[0, x.length]], removed: [], ...(() => {
-        const { db } = frameLevels(x, sr);
-        const v = Array.from(db).filter((d) => d > -100);
-        return { floorDb: percentile(v, 0.1), speechDb: percentile(v, 0.95) };
-      })() };
+  let pauses;
+  if (s.cut) {
+    pauses = findPauses(x, sr, { minPause: s.minPause, keepPause: s.keepPause, sensitivity: s.sensitivity });
+  } else {
+    const { db } = frameLevels(x, sr);
+    const v = Array.from(db).filter((d) => d > -100);
+    pauses = { keep: [[0, x.length]], removed: [], floorDb: percentile(v, 0.1), speechDb: percentile(v, 0.95) };
+  }
 
-  report('Эквалайзер', 0.78);
-  voiceEQ(x, sr, s.eq, s.warmth || 0);
-  report('Де-эссер', 0.82);
-  deEss(x, sr, s.deess);
-  report('Компрессор', 0.86);
-  compress(x, sr, s.compress, pauses.speechDb);
+  if (s.expand > 0) {
+    report('Хвосты эха', 0.76);
+    expand(x, sr, s.expand, pauses.speechDb, pauses.floorDb);
+  }
+  report('Тембр', 0.8);
+  voiceEQ(x, sr, s.tone ?? 'clear');
+  report('Де-эссер', 0.83);
+  deEss(x, sr, s.deess || 0);
+  report('Ровность', 0.86);
+  compress(x, sr, s.compress || 0, pauses.speechDb);
 
   report('Склейка', 0.9);
   x = spliceSegments(x, sr, pauses.keep);

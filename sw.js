@@ -1,5 +1,5 @@
 // Офлайн-режим: сначала сеть (всегда свежая версия), без сети — из кэша.
-const CACHE = 'instrument-v1';
+const CACHE = 'instrument-v2';
 const SHELL = [
   './',
   'index.html',

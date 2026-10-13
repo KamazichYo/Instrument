@@ -1,97 +1,82 @@
-import { PRESETS } from './dsp.js';
+import { OPTIONS, PRESETS, DEFAULT_PICK, resolveSettings } from './dsp.js';
 
 const $ = (id) => document.getElementById(id);
-const STORE_KEY = 'instrument.audio.settings.v1';
+const STORE_KEY = 'instrument.audio.pick.v2';
+const PREVIEW_SEC = 12;
 
 // ---------- состояние ----------
 
-let settings = loadSettings();
-let presetId = settings.__preset || 'voice';
+let pick = loadPick();
 let decoded = null;   // { channels: Float32Array[], sampleRate, duration }
 let file = null;
 let resultBlob = null;
 let urls = [];
+let excerptStart = 0; // секунды
 
-function loadSettings() {
+function loadPick() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    if (raw) return { ...PRESETS.voice, ...JSON.parse(raw) };
+    if (raw) return { ...DEFAULT_PICK, ...JSON.parse(raw) };
   } catch {}
-  return { ...PRESETS.voice, __preset: 'voice' };
+  return { ...DEFAULT_PICK };
 }
-function saveSettings() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify({ ...settings, __preset: presetId })); } catch {}
+function savePick() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(pick)); } catch {}
 }
 
-// ---------- настройки в интерфейсе ----------
-
-const fmt = {
-  minPause: (v) => v.toFixed(2) + ' с',
-  keepPause: (v) => (v * 1000).toFixed(0) + ' мс',
-  sensitivity: pct,
-  denoise: pct,
-  eq: pct,
-  compress: pct,
-  deess: pct,
-  hpf: (v) => (v > 0 ? v + ' Гц' : 'выкл'),
-  warmth: (v) => (v > 0 ? '+' : '') + v + ' дБ',
-};
-function pct(v) { return v > 0 ? Math.round(v * 100) + '%' : 'выкл'; }
+// ---------- переключатели ----------
 
 function renderPresets() {
   const box = $('presets');
   box.innerHTML = '';
-  for (const [id, p] of Object.entries(PRESETS)) {
+  for (const p of Object.values(PRESETS)) {
     const b = document.createElement('button');
-    b.className = 'chip' + (id === presetId ? ' on' : '');
+    const on = Object.entries(p.pick).every(([k, v]) => pick[k] === v);
+    b.className = 'chip' + (on ? ' on' : '');
     b.textContent = p.label;
-    b.onclick = () => {
-      presetId = id;
-      const { label, ...vals } = PRESETS[id];
-      settings = { ...settings, ...vals };
-      syncControls();
-      renderPresets();
-      saveSettings();
-    };
-    box.appendChild(b);
-  }
-  if (presetId === 'custom') {
-    const b = document.createElement('button');
-    b.className = 'chip on';
-    b.textContent = 'Свой';
+    b.onclick = () => { pick = { ...p.pick }; onPickChanged(); };
     box.appendChild(b);
   }
 }
 
-function syncControls() {
-  document.querySelectorAll('[data-k]').forEach((el) => {
-    const k = el.dataset.k;
-    const v = settings[k];
-    if (el.type === 'checkbox') el.checked = !!v;
-    else if (el.tagName === 'SELECT') el.value = v == null ? 'off' : String(v);
-    else el.value = v ?? 0;
-  });
-  document.querySelectorAll('[data-o]').forEach((o) => {
-    const k = o.dataset.o;
-    o.textContent = fmt[k] ? fmt[k](Number(settings[k] ?? 0)) : settings[k];
-  });
-  document.querySelectorAll('[data-dep]').forEach((el) => {
-    el.classList.toggle('hidden', !settings[el.dataset.dep]);
-  });
+function renderOptions() {
+  const box = $('options');
+  box.innerHTML = '';
+  for (const [group, def] of Object.entries(OPTIONS)) {
+    const wrap = document.createElement('div');
+    wrap.className = 'opt';
+    wrap.innerHTML = `<div class="opt-title">${def.title}</div>`;
+    const seg = document.createElement('div');
+    seg.className = 'seg';
+    seg.style.gridTemplateColumns = `repeat(${Object.keys(def.items).length}, 1fr)`;
+    for (const [val, label] of Object.entries(def.items)) {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.className = pick[group] === val ? 'on' : '';
+      b.onclick = () => {
+        if (pick[group] === val) return;
+        pick = { ...pick, [group]: val };
+        onPickChanged();
+      };
+      seg.appendChild(b);
+    }
+    wrap.appendChild(seg);
+    const hint = document.createElement('div');
+    hint.className = 'opt-hint';
+    hint.textContent = def.hint;
+    wrap.appendChild(hint);
+    box.appendChild(wrap);
+  }
 }
 
-document.querySelectorAll('[data-k]').forEach((el) => {
-  const ev = el.type === 'range' ? 'input' : 'change';
-  el.addEventListener(ev, () => {
-    const k = el.dataset.k;
-    if (el.type === 'checkbox') settings[k] = el.checked;
-    else if (el.tagName === 'SELECT') settings[k] = el.value === 'off' ? null : Number(el.value);
-    else settings[k] = Number(el.value);
-    if (presetId !== 'custom') { presetId = 'custom'; renderPresets(); }
-    syncControls();
-    saveSettings();
-  });
-});
+function onPickChanged() {
+  savePick();
+  renderPresets();
+  renderOptions();
+  // если сейчас играет обработанный вариант — сразу переключаемся на новый
+  if (playing === 'proc') playProcessed();
+  else updateListenInfo();
+}
 
 // ---------- загрузка файла ----------
 
@@ -104,24 +89,23 @@ $('file').addEventListener('change', async (e) => {
 $('change').onclick = () => $('file').click();
 
 async function openFile(f) {
+  stopPlayback();
+  previewCache.clear();
   file = f;
   decoded = null;
   $('result').classList.add('hidden');
+  $('listen').classList.add('hidden');
   $('pick').classList.add('hidden');
   $('source').classList.remove('hidden');
   $('fileName').textContent = f.name;
   $('fileInfo').textContent = 'Читаю файл… ' + mb(f.size);
   setRun(false, 'Загрузка…');
   clearCanvas($('waveIn'));
+  revokeUrls();
 
   if (f.size > 700 * 1024 * 1024) {
     $('fileInfo').textContent = 'Файл больше 700 МБ — телефону может не хватить памяти. Лучше отправьте сюда только аудио (Диктофон) или более короткое видео.';
   }
-
-  revokeUrls();
-  const inUrl = URL.createObjectURL(f);
-  urls.push(inUrl);
-  $('playIn').src = inUrl;
 
   try {
     const buf = await f.arrayBuffer();
@@ -133,11 +117,14 @@ async function openFile(f) {
     ctx.close && ctx.close();
     const channels = [];
     for (let c = 0; c < ab.numberOfChannels; c++) channels.push(ab.getChannelData(c));
-    decoded = { channels, sampleRate: ab.sampleRate, duration: ab.duration };
+    decoded = { channels, sampleRate: ab.sampleRate, duration: ab.duration, peaks: mixPeaks(channels) };
     $('fileInfo').textContent =
       `${time(ab.duration)} · ${ab.numberOfChannels === 1 ? 'моно' : 'стерео'} · ${(ab.sampleRate / 1000).toFixed(1)} кГц · ${mb(f.size)}`;
-    drawWave($('waveIn'), mixPeaks(channels), [], ab.length, 'var(--wave)');
-    setRun(true, 'Улучшить звук');
+    excerptStart = busiestWindow(channels[0], ab.sampleRate);
+    drawSource();
+    $('listen').classList.remove('hidden');
+    updateListenInfo();
+    setRun(true, 'Обработать весь файл');
   } catch (err) {
     console.error(err);
     $('fileInfo').textContent =
@@ -154,20 +141,201 @@ function decodeAudio(ctx, buf) {
   });
 }
 
-// ---------- обработка ----------
+// Кусок с самой плотной речью — его и слушаем по умолчанию.
+function busiestWindow(x, sr) {
+  const dur = x.length / sr;
+  if (dur <= PREVIEW_SEC) return 0;
+  const block = Math.round(sr * 0.5);
+  const n = Math.floor(x.length / block);
+  const e = new Float64Array(n);
+  for (let b = 0; b < n; b++) {
+    let s = 0;
+    for (let i = b * block; i < (b + 1) * block; i += 8) s += x[i] * x[i];
+    e[b] = s;
+  }
+  const w = Math.round(PREVIEW_SEC / 0.5);
+  let best = 0, bestSum = -1, sum = 0;
+  for (let b = 0; b < n; b++) {
+    sum += e[b];
+    if (b >= w) sum -= e[b - w];
+    if (b >= w - 1 && sum > bestSum) { bestSum = sum; best = b - w + 1; }
+  }
+  return best * 0.5;
+}
+
+$('waveIn').addEventListener('click', (e) => {
+  if (!decoded) return;
+  const r = e.currentTarget.getBoundingClientRect();
+  const t = ((e.clientX - r.left) / r.width) * decoded.duration;
+  excerptStart = Math.max(0, Math.min(decoded.duration - PREVIEW_SEC, t - 1));
+  if (excerptStart < 0) excerptStart = 0;
+  drawSource();
+  const was = playing;
+  stopPlayback();
+  if (was === 'orig') playOriginal();
+  else if (was === 'proc') playProcessed();
+  else updateListenInfo();
+});
+
+function drawSource() {
+  const total = decoded.channels[0].length;
+  const a = Math.round(excerptStart * decoded.sampleRate);
+  const b = Math.min(total, a + PREVIEW_SEC * decoded.sampleRate);
+  drawWave($('waveIn'), decoded.peaks, [], total, 'var(--wave)', [a, b]);
+}
+
+// ---------- прослушка фрагмента ----------
+
+let audioCtx = null;
+let source = null;
+let playing = null; // null | 'orig' | 'proc'
+let previewWorker = null;
+let previewSeq = 0;
+let previewBusy = false;
+const previewCache = new Map(); // ключ (выбор + кусок) → AudioBuffer: повторные переключения мгновенные
+
+function ensureAudio() {
+  // iOS: без этого Web Audio молчит при включённом беззвучном режиме
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
+  if (!audioCtx) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new Ctx();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function excerptChannels() {
+  const sr = decoded.sampleRate;
+  const a = Math.round(excerptStart * sr);
+  const b = Math.min(decoded.channels[0].length, a + PREVIEW_SEC * sr);
+  return decoded.channels.map((c) => c.slice(a, b));
+}
+
+function playBuffer(buf, which) {
+  stopSource();
+  const ctx = ensureAudio();
+  source = ctx.createBufferSource();
+  source.buffer = buf;
+  source.connect(ctx.destination);
+  source.onended = () => { if (source && source.buffer === buf) { playing = null; source = null; updateListenButtons(); } };
+  source.start();
+  playing = which;
+  updateListenButtons();
+}
+
+function stopSource() {
+  if (source) { try { source.onended = null; source.stop(); } catch {} source = null; }
+}
+function stopPlayback() {
+  stopSource();
+  playing = null;
+  previewSeq++;
+  clearBusy();
+  updateListenButtons();
+}
+function clearBusy() {
+  $('playOrig').classList.remove('busy');
+  $('playProc').classList.remove('busy');
+}
+
+$('playOrig').onclick = () => {
+  ensureAudio();
+  if (playing === 'orig') return stopPlayback();
+  playOriginal();
+};
+$('playProc').onclick = () => {
+  ensureAudio();
+  if (playing === 'proc') return stopPlayback();
+  playProcessed();
+};
+
+// Оригинал тоже прогоняем через выравнивание громкости — чтобы сравнение было честным
+// (громче всегда кажется «лучше»).
+const ORIG_PICK = { pauses: 'off', reverb: 'off', noise: 'off', tone: 'none', level: 'off', loudness: 'social' };
+
+function playOriginal() { renderAndPlay(ORIG_PICK, 'orig'); }
+function playProcessed() { renderAndPlay(pick, 'proc'); }
+
+function renderAndPlay(p, which) {
+  if (!decoded) return;
+  const key = JSON.stringify(p) + '@' + excerptStart.toFixed(2);
+  const cached = previewCache.get(key);
+  if (cached) { playBuffer(cached.buf, which); showPreviewStats(cached.stats, which); return; }
+
+  stopSource();
+  clearBusy();
+  playing = which;
+  const seq = ++previewSeq;
+  setBusy(which, true);
+  // предыдущий расчёт уже не нужен — прерываем, чтобы не ждать его
+  if (previewWorker && previewBusy) { previewWorker.terminate(); previewWorker = null; }
+  if (!previewWorker) previewWorker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+  previewBusy = true;
+  const channels = excerptChannels();
+  previewWorker.onmessage = (e) => {
+    const m = e.data;
+    if (m.type === 'progress') return;
+    if (m.id !== seq) return;
+    previewBusy = false;
+    if (seq !== previewSeq) return; // пользователь уже нажал что-то другое
+    setBusy(which, false);
+    if (m.type === 'error') { playing = null; updateListenButtons(); alert('Ошибка: ' + m.message); return; }
+    const ctx = ensureAudio();
+    const buf = ctx.createBuffer(1, Math.max(1, m.output.length), decoded.sampleRate);
+    buf.getChannelData(0).set(m.output);
+    previewCache.set(key, { buf, stats: m.stats });
+    if (previewCache.size > 16) previewCache.delete(previewCache.keys().next().value);
+    playBuffer(buf, which);
+    showPreviewStats(m.stats, which);
+  };
+  previewWorker.postMessage(
+    { id: seq, channels, sampleRate: decoded.sampleRate, settings: resolveSettings(p), wav: false },
+    channels.map((c) => c.buffer),
+  );
+}
+
+function setBusy(which, on) {
+  const btn = which === 'orig' ? $('playOrig') : $('playProc');
+  btn.classList.toggle('busy', on);
+  updateListenButtons();
+}
+
+function updateListenButtons() {
+  for (const [id, w] of [['playOrig', 'orig'], ['playProc', 'proc']]) {
+    const b = $(id);
+    const busy = b.classList.contains('busy');
+    b.classList.toggle('playing', playing === w && !busy);
+    b.querySelector('.i').textContent = busy ? '…' : playing === w ? '■' : '▶';
+  }
+}
+
+function updateListenInfo(extra) {
+  if (!decoded) return;
+  const a = excerptStart, b = Math.min(decoded.duration, a + PREVIEW_SEC);
+  $('listenInfo').textContent = `Фрагмент ${time(a, 0)}–${time(b, 0)}` + (extra ? ' · ' + extra : ' · громкость выровнена для честного сравнения');
+}
+
+function showPreviewStats(st, which) {
+  if (which !== 'proc' || !st) return updateListenInfo();
+  updateListenInfo(st.pausesCut ? `вырезано ${st.removedSec.toFixed(1)} с пауз` : 'пауз не вырезано');
+}
+
+// ---------- обработка всего файла ----------
 
 let worker = null;
 $('run').onclick = run;
 
 async function run() {
   if (!decoded) return;
+  stopPlayback();
   setRun(false, 'Обработка…');
   $('busy').classList.remove('hidden');
   $('result').classList.add('hidden');
   progress('Подготовка', 0);
   const lock = await wakeLock();
 
-  // копии каналов: оригинал остаётся для повторной обработки с другими настройками
+  // копии каналов: оригинал остаётся для повторной обработки с другими вариантами
   const channels = decoded.channels.map((c) => c.slice());
   if (worker) worker.terminate();
   worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
@@ -183,9 +351,8 @@ async function run() {
     worker && worker.terminate();
     worker = null;
   }
-  const { __preset, ...s } = settings;
   worker.postMessage(
-    { channels, sampleRate: decoded.sampleRate, settings: s },
+    { channels, sampleRate: decoded.sampleRate, settings: resolveSettings(pick), wav: true },
     channels.map((c) => c.buffer),
   );
 }
@@ -222,17 +389,19 @@ function done({ output, wav, removed, stats }) {
 
   const notes = [];
   if (st.clippedMs > 5) notes.push(['warn', `В исходнике есть перегруз (~${Math.round(st.clippedMs)} мс) — хрипы не убрать. В следующий раз держите телефон чуть дальше ото рта.`]);
-  if (st.noiseDb > -45) notes.push(['warn', 'Фон громкий. Если голос звучит «в банке» — уменьшите шумодав и попробуйте записать в более тихом месте.']);
-  if (st.speechDb - st.floorDb < 15 && settings.cut) notes.push(['', 'Речь почти не отличается от фона по громкости — паузы могли найтись неточно. Попробуйте изменить «Порог тишины».']);
+  if (st.noiseDb > -45) notes.push(['warn', 'Фон громкий. Если голос звучит «жёвано» — поставьте «Шум: Слабо» и попробуйте записать в более тихом месте.']);
+  if (st.speechDb - st.floorDb < 15 && pick.pauses !== 'off') notes.push(['', 'Речь почти не отличается от фона по громкости — паузы могли найтись неточно. Если съедаются слова — «Паузы: Мягко».']);
   notes.push(['', `Обработано за ${(st.ms / 1000).toFixed(1)} с.`]);
   $('notes').innerHTML = notes.map(([c, t]) => `<div class="note ${c}">${t}</div>`).join('');
 
   $('result').classList.remove('hidden');
   const total = decoded.channels[0].length;
-  drawWave($('waveCut'), mixPeaks(decoded.channels), removed, total, 'var(--wave)');
+  drawWave($('waveCut'), decoded.peaks, removed, total, 'var(--wave)');
   drawWave($('waveOut'), peaks(output, 600), [], output.length, 'var(--wave-2)');
   $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
+
+$('playOut').addEventListener('play', () => stopPlayback());
 
 $('share').onclick = async () => {
   if (!resultBlob) return;
@@ -279,12 +448,16 @@ function clearCanvas(cv) {
   g.clearRect(0, 0, cv.width, cv.height);
 }
 
-function drawWave(cv, pk, removed, total, color) {
+function drawWave(cv, pk, removed, total, color, sel) {
   const dpr = window.devicePixelRatio || 1;
   const w = cv.clientWidth * dpr, h = cv.clientHeight * dpr;
   cv.width = w; cv.height = h;
   const g = cv.getContext('2d');
   g.clearRect(0, 0, w, h);
+  if (sel) {
+    g.fillStyle = cssColor('var(--sel)');
+    g.fillRect((sel[0] / total) * w, 0, ((sel[1] - sel[0]) / total) * w, h);
+  }
   g.fillStyle = cssColor('var(--cut)');
   for (const [a, b] of removed) g.fillRect((a / total) * w, 0, Math.max(1, ((b - a) / total) * w), h);
   // мягкое масштабирование, чтобы тихие записи тоже было видно
@@ -303,9 +476,10 @@ function drawWave(cv, pk, removed, total, color) {
 // ---------- мелочи ----------
 
 function setRun(enabled, text) { $('run').disabled = !enabled; $('run').textContent = text; }
-function time(s) {
-  const m = Math.floor(s / 60), r = s - m * 60;
-  return `${m}:${r < 10 ? '0' : ''}${r.toFixed(1)}`;
+function time(s, digits = 1) {
+  const m = Math.floor(s / 60);
+  const r = digits === 0 ? Math.floor(s - m * 60) : s - m * 60;
+  return `${m}:${r < 10 ? '0' : ''}${r.toFixed(digits)}`;
 }
 function lufs(v) { return v > -70 ? v.toFixed(0) : '—'; }
 function mb(b) { return (b / 1048576).toFixed(1) + ' МБ'; }
@@ -314,9 +488,7 @@ async function wakeLock() {
   try { return await navigator.wakeLock.request('screen'); } catch { return null; }
 }
 
-window.addEventListener('resize', () => {
-  if (decoded) drawWave($('waveIn'), mixPeaks(decoded.channels), [], decoded.channels[0].length, 'var(--wave)');
-});
+window.addEventListener('resize', () => { if (decoded) drawSource(); });
 
-syncControls();
 renderPresets();
+renderOptions();

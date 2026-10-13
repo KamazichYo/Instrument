@@ -165,3 +165,40 @@ details[open] summary::after { transform: rotate(-90deg); }
 .tips li { margin: 4px 0; font-size: 14px; }
 .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
+/* ---------- переключатели вариантов ---------- */
+:root { --sel: rgba(124, 108, 255, 0.18); }
+.opt { padding: 12px 0; border-top: 1px solid var(--line); }
+.opt:first-child { border-top: 0; padding-top: 0; }
+.opt-title { font-weight: 600; margin-bottom: 8px; }
+.opt-hint { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.seg {
+  display: grid; gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface-2);
+}
+.seg button {
+  font: inherit; font-size: 14px; border: 0; border-radius: 9px; padding: 10px 4px; min-height: 40px;
+  background: transparent; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.seg button.on { background: var(--accent); color: #fff; font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+canvas.tap { cursor: pointer; }
+
+/* ---------- панель прослушки (прилипает к низу экрана) ---------- */
+.listen {
+  position: sticky; bottom: 0; z-index: 5; margin: 14px -16px 0;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  border-top: 1px solid var(--line);
+}
+.listen-btns { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; }
+.lbtn {
+  font: inherit; font-weight: 600; font-size: 16px; padding: 13px 10px; border-radius: 14px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--text);
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.lbtn.main { background: var(--accent); border-color: var(--accent); color: #fff; }
+.lbtn.playing { outline: 3px solid var(--ok); outline-offset: -3px; }
+.lbtn .i { display: inline-block; width: 1em; text-align: center; }
+.lbtn.busy .i { animation: pulse 0.8s infinite alternate; }
+@keyframes pulse { from { opacity: .3; } to { opacity: 1; } }
+.listen-info { font-size: 12px; color: var(--muted); text-align: center; margin-top: 6px; }

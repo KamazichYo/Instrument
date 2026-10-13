@@ -20,7 +20,7 @@
       <a class="back" href="../">‹ Инструменты</a>
     </header>
     <h1 class="big-title">Звук</h1>
-    <p class="sub">Убирает паузы, шум и «бубнёж», выравнивает громкость под соцсети.</p>
+    <p class="sub">Выберите запись, нажимайте варианты и слушайте — оставьте то, что звучит лучше. Потом обработайте весь файл.</p>
 
     <!-- 1. Файл -->
     <label class="pick" id="pick">
@@ -36,84 +36,28 @@
         <button class="link-btn" id="change">Другой файл</button>
       </div>
       <div class="muted small" id="fileInfo"></div>
-      <canvas class="wave" id="waveIn"></canvas>
-      <audio id="playIn" controls preload="metadata"></audio>
+      <canvas class="wave tap" id="waveIn"></canvas>
+      <div class="muted small">Тапните по волне, чтобы выбрать кусок для прослушки.</div>
     </section>
 
-    <!-- 2. Настройки -->
-    <section class="card" id="settings">
-      <h2>Режим</h2>
+    <!-- 2. Варианты -->
+    <section class="card">
+      <h2>Быстрый выбор</h2>
       <div class="chips" id="presets"></div>
-
-      <div style="margin-top:14px">
-        <div class="ctl">
-          <div class="ctl-head">
-            <span>Вырезать паузы</span>
-            <label class="switch"><input type="checkbox" data-k="cut"><i></i></label>
-          </div>
-          <p>Длинные паузы укорачиваются до короткой, естественной.</p>
-        </div>
-        <div class="ctl" data-dep="cut">
-          <div class="ctl-head"><span>Резать паузы длиннее</span><output data-o="minPause"></output></div>
-          <input type="range" data-k="minPause" min="0.15" max="1.5" step="0.05">
-        </div>
-        <div class="ctl" data-dep="cut">
-          <div class="ctl-head"><span>Оставлять от паузы</span><output data-o="keepPause"></output></div>
-          <input type="range" data-k="keepPause" min="0" max="0.6" step="0.01">
-        </div>
-        <div class="ctl" data-dep="cut">
-          <div class="ctl-head"><span>Порог тишины</span><output data-o="sensitivity"></output></div>
-          <p>Выше — режет и тихие вдохи. Если съедаются концы слов — уменьшите.</p>
-          <input type="range" data-k="sensitivity" min="0" max="1" step="0.05">
-        </div>
-        <div class="ctl">
-          <div class="ctl-head"><span>Шумодав</span><output data-o="denoise"></output></div>
-          <p>Гул, шипение, холодильник, улица. Слишком много — голос «как в банке».</p>
-          <input type="range" data-k="denoise" min="0" max="1" step="0.05">
-        </div>
-        <div class="ctl">
-          <div class="ctl-head"><span>Чёткость голоса</span><output data-o="eq"></output></div>
-          <p>Убирает «коробку» 300 Гц, добавляет разборчивость и воздух.</p>
-          <input type="range" data-k="eq" min="0" max="1" step="0.05">
-        </div>
-        <div class="ctl">
-          <div class="ctl-head"><span>Выравнивание (компрессия)</span><output data-o="compress"></output></div>
-          <p>Тихие и громкие слова становятся ровнее.</p>
-          <input type="range" data-k="compress" min="0" max="1" step="0.05">
-        </div>
-        <div class="ctl">
-          <div class="ctl-head">
-            <span>Громкость</span>
-            <select data-k="target">
-              <option value="-14">−14 LUFS · соцсети</option>
-              <option value="-16">−16 LUFS · подкаст</option>
-              <option value="-19">−19 LUFS · тихо</option>
-              <option value="off">Не менять</option>
-            </select>
-          </div>
-        </div>
-        <details class="ctl">
-          <summary>Тонкая настройка</summary>
-          <div class="ctl">
-            <div class="ctl-head"><span>Срез низов</span><output data-o="hpf"></output></div>
-            <p>Убирает гул, стук по телефону и ветер. 80–100 Гц — норма для голоса.</p>
-            <input type="range" data-k="hpf" min="0" max="160" step="5">
-          </div>
-          <div class="ctl">
-            <div class="ctl-head"><span>Де-эссер</span><output data-o="deess"></output></div>
-            <p>Смягчает резкие «с», «ш», «щ».</p>
-            <input type="range" data-k="deess" min="0" max="1" step="0.05">
-          </div>
-          <div class="ctl">
-            <div class="ctl-head"><span>Теплота</span><output data-o="warmth"></output></div>
-            <p>Подъём низов голоса. Полезно, если записывали далеко от телефона.</p>
-            <input type="range" data-k="warmth" min="-3" max="4" step="0.5">
-          </div>
-        </details>
-      </div>
     </section>
+
+    <section class="card" id="options"></section>
 
     <button class="btn" id="run" disabled>Сначала выберите запись</button>
+
+    <!-- Прослушка фрагмента: тапнул вариант — сразу слышишь -->
+    <div class="listen hidden" id="listen">
+      <div class="listen-btns">
+        <button class="lbtn" id="playOrig"><span class="i">▶</span> Оригинал</button>
+        <button class="lbtn main" id="playProc"><span class="i">▶</span> С обработкой</button>
+      </div>
+      <div class="listen-info" id="listenInfo"></div>
+    </div>
 
     <!-- 3. Прогресс -->
     <section class="card hidden" id="busy">
@@ -156,6 +100,15 @@
           <li>Камера при съёмке видео пишет звук другими микрофонами (сверху и у камеры) — для озвучки лучше Диктофон.</li>
           <li>Держите телефон в 15–20 см ото рта и <b>чуть сбоку</b>, а не прямо напротив — так меньше «пуков» на «п» и «б» и шипения.</li>
           <li>Слишком близко (меньше 10 см) — перегруз и бубнёж; слишком далеко (больше 40 см) — эхо комнаты, которое не убрать.</li>
+        </ul>
+        <h3>Комната с голыми стенами («звук из банки»)</h3>
+        <ul>
+          <li>Программа убирает <b>хвосты</b> эха («Эхо комнаты»), но ранние отражения от ближайшей стены приходят почти вместе с голосом — их не убрать ничем. Поэтому главное — не дать им попасть в микрофон.</li>
+          <li><b>Не стойте лицом к стене</b> и не пишите в углу. Лучше всего — лицом в центр комнаты или к открытому шкафу с одеждой.</li>
+          <li><b>Ближе к микрофону</b> — меньше комнаты: 10–15 см вместо 30. Каждое сокращение расстояния вдвое — эха в записи заметно меньше.</li>
+          <li>Бесплатный «звукопоглотитель»: одеяло или плед за телефоном (на спинке стула) и мягкое за спиной. Даже подушка на столе под телефоном помогает.</li>
+          <li>Голый пол и потолок тоже отражают — ковёр или плед на полу между вами и телефоном убирают «звон».</li>
+          <li>Самый простой вариант — записывать, сидя под одеялом или в шкафу с одеждой. Выглядит смешно, звучит как студия.</li>
         </ul>
         <h3>Комната</h3>
         <ul>
