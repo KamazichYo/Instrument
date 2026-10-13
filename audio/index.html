@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Звук — Instrument</title>
+  <meta name="theme-color" content="#0e0f13">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Instrument">
+  <link rel="manifest" href="../manifest.webmanifest">
+  <link rel="apple-touch-icon" href="../icons/icon-180.png">
+  <link rel="icon" type="image/png" href="../icons/icon-192.png">
+  <link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+  <main class="wrap">
+    <header class="top">
+      <a class="back" href="../">‹ Инструменты</a>
+    </header>
+    <h1 class="big-title">Звук</h1>
+    <p class="sub">Убирает паузы, шум и «бубнёж», выравнивает громкость под соцсети.</p>
+
+    <!-- 1. Файл -->
+    <label class="pick" id="pick">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg>
+      <b>Выбрать запись</b>
+      <span class="muted small">Диктофон (m4a), видео из Фото, mp3, wav</span>
+      <input type="file" id="file" accept="audio/*,video/*,.m4a,.mp3,.wav,.aac,.caf,.mov,.mp4">
+    </label>
+
+    <section class="card hidden" id="source">
+      <div class="file-row">
+        <span class="name" id="fileName"></span>
+        <button class="link-btn" id="change">Другой файл</button>
+      </div>
+      <div class="muted small" id="fileInfo"></div>
+      <canvas class="wave" id="waveIn"></canvas>
+      <audio id="playIn" controls preload="metadata"></audio>
+    </section>
+
+    <!-- 2. Настройки -->
+    <section class="card" id="settings">
+      <h2>Режим</h2>
+      <div class="chips" id="presets"></div>
+
+      <div style="margin-top:14px">
+        <div class="ctl">
+          <div class="ctl-head">
+            <span>Вырезать паузы</span>
+            <label class="switch"><input type="checkbox" data-k="cut"><i></i></label>
+          </div>
+          <p>Длинные паузы укорачиваются до короткой, естественной.</p>
+        </div>
+        <div class="ctl" data-dep="cut">
+          <div class="ctl-head"><span>Резать паузы длиннее</span><output data-o="minPause"></output></div>
+          <input type="range" data-k="minPause" min="0.15" max="1.5" step="0.05">
+        </div>
+        <div class="ctl" data-dep="cut">
+          <div class="ctl-head"><span>Оставлять от паузы</span><output data-o="keepPause"></output></div>
+          <input type="range" data-k="keepPause" min="0" max="0.6" step="0.01">
+        </div>
+        <div class="ctl" data-dep="cut">
+          <div class="ctl-head"><span>Порог тишины</span><output data-o="sensitivity"></output></div>
+          <p>Выше — режет и тихие вдохи. Если съедаются концы слов — уменьшите.</p>
+          <input type="range" data-k="sensitivity" min="0" max="1" step="0.05">
+        </div>
+        <div class="ctl">
+          <div class="ctl-head"><span>Шумодав</span><output data-o="denoise"></output></div>
+          <p>Гул, шипение, холодильник, улица. Слишком много — голос «как в банке».</p>
+          <input type="range" data-k="denoise" min="0" max="1" step="0.05">
+        </div>
+        <div class="ctl">
+          <div class="ctl-head"><span>Чёткость голоса</span><output data-o="eq"></output></div>
+          <p>Убирает «коробку» 300 Гц, добавляет разборчивость и воздух.</p>
+          <input type="range" data-k="eq" min="0" max="1" step="0.05">
+        </div>
+        <div class="ctl">
+          <div class="ctl-head"><span>Выравнивание (компрессия)</span><output data-o="compress"></output></div>
+          <p>Тихие и громкие слова становятся ровнее.</p>
+          <input type="range" data-k="compress" min="0" max="1" step="0.05">
+        </div>
+        <div class="ctl">
+          <div class="ctl-head">
+            <span>Громкость</span>
+            <select data-k="target">
+              <option value="-14">−14 LUFS · соцсети</option>
+              <option value="-16">−16 LUFS · подкаст</option>
+              <option value="-19">−19 LUFS · тихо</option>
+              <option value="off">Не менять</option>
+            </select>
+          </div>
+        </div>
+        <details class="ctl">
+          <summary>Тонкая настройка</summary>
+          <div class="ctl">
+            <div class="ctl-head"><span>Срез низов</span><output data-o="hpf"></output></div>
+            <p>Убирает гул, стук по телефону и ветер. 80–100 Гц — норма для голоса.</p>
+            <input type="range" data-k="hpf" min="0" max="160" step="5">
+          </div>
+          <div class="ctl">
+            <div class="ctl-head"><span>Де-эссер</span><output data-o="deess"></output></div>
+            <p>Смягчает резкие «с», «ш», «щ».</p>
+            <input type="range" data-k="deess" min="0" max="1" step="0.05">
+          </div>
+          <div class="ctl">
+            <div class="ctl-head"><span>Теплота</span><output data-o="warmth"></output></div>
+            <p>Подъём низов голоса. Полезно, если записывали далеко от телефона.</p>
+            <input type="range" data-k="warmth" min="-3" max="4" step="0.5">
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <button class="btn" id="run" disabled>Сначала выберите запись</button>
+
+    <!-- 3. Прогресс -->
+    <section class="card hidden" id="busy">
+      <div class="ctl-head"><span id="stage">Обработка…</span><output id="pct">0%</output></div>
+      <div class="progress"><div id="bar"></div></div>
+      <div class="muted small">Не блокируйте экран, пока идёт обработка.</div>
+    </section>
+
+    <!-- 4. Результат -->
+    <section class="card hidden" id="result">
+      <h2>Готово</h2>
+      <div class="stats" id="stats"></div>
+      <div id="notes"></div>
+      <div class="legend" style="margin-top:14px"><span><i style="background:var(--wave)"></i>было</span><span><i style="background:var(--cut)"></i>вырезано</span></div>
+      <canvas class="wave" id="waveCut"></canvas>
+      <div class="legend"><span><i style="background:var(--wave-2)"></i>стало</span></div>
+      <canvas class="wave" id="waveOut"></canvas>
+      <audio id="playOut" controls preload="auto"></audio>
+      <div class="btn-row">
+        <button class="btn" id="share">Сохранить</button>
+        <a class="btn ghost" id="download" download>Скачать WAV</a>
+      </div>
+      <p class="muted small">«Сохранить» откроет меню iPhone: «Сохранить в Файлы», CapCut, Telegram и т.д.</p>
+    </section>
+
+    <!-- Советы -->
+    <section class="card tips">
+      <details>
+        <summary>Как записывать голос на iPhone 11</summary>
+        <h3>Настройки</h3>
+        <ul>
+          <li>Настройки → Диктофон → Качество звука → <b>Без потерь</b>. Меньше артефактов сжатия — чище результат после обработки.</li>
+          <li>Диктофон пишет в моно с автоматической регулировкой усиления (её нельзя отключить) — поэтому громкость «плавает», это выравнивает компрессия здесь.</li>
+          <li>В самом Диктофоне есть «Улучшить запись» (волшебная палочка при редактировании) — можно применить её до загрузки сюда, но тогда шумодав здесь ставьте поменьше.</li>
+          <li>Включите авиарежим или «Не беспокоить», чтобы звонок или уведомление не испортили дубль.</li>
+        </ul>
+        <h3>Микрофон</h3>
+        <ul>
+          <li>Основной микрофон Диктофона — <b>снизу</b>, рядом с разъёмом Lightning. Не закрывайте его пальцем и чехлом.</li>
+          <li>Камера при съёмке видео пишет звук другими микрофонами (сверху и у камеры) — для озвучки лучше Диктофон.</li>
+          <li>Держите телефон в 15–20 см ото рта и <b>чуть сбоку</b>, а не прямо напротив — так меньше «пуков» на «п» и «б» и шипения.</li>
+          <li>Слишком близко (меньше 10 см) — перегруз и бубнёж; слишком далеко (больше 40 см) — эхо комнаты, которое не убрать.</li>
+        </ul>
+        <h3>Комната</h3>
+        <ul>
+          <li>Эхо — главный враг. Пишите в комнате с мебелью, коврами, шторами; шкаф с одеждой — почти студия.</li>
+          <li>Выключите вентилятор, кондиционер, холодильник рядом. Ровный шум шумодав убирает хорошо, а голоса, музыку и стук — плохо.</li>
+          <li>На улице — от ветра помогает даже кусочек поролона на нижний микрофон.</li>
+          <li>Сделайте 1–2 секунды тишины в начале записи: по ним шумодав точнее определит фон.</li>
+        </ul>
+        <h3>Лучший вариант</h3>
+        <ul>
+          <li>Петличка с Lightning (или через переходник) даёт заметно лучший звук, чем любой встроенный микрофон: рот близко, комнаты почти не слышно.</li>
+        </ul>
+      </details>
+    </section>
+  </main>
+
+  <script type="module" src="../assets/audio/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('../sw.js').catch(() => {});
+  </script>
+</body>
+</html>
