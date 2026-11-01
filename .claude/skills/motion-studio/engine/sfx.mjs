@@ -22,6 +22,7 @@ const S = {
   ding: { about: 'колокольчик: успех, уведомление, «готово»', dur: 1.6, gen: ding },
   sparkle: { about: 'искры: магия, «волшебство ИИ»', dur: 0.9, gen: sparkle },
   glitch: { about: 'цифровой сбой: глитч-переход', dur: 0.4, gen: glitch },
+  boing: { about: 'пружинистый отскок мяча/персонажа', dur: 0.42, gen: (n, r, p) => tone(n, (t) => (170 + 260 * Math.exp(-t * 9) + 28 * Math.sin(2 * Math.PI * 15 * t) * Math.exp(-t * 5)) * p, 0.002, 0.16, 0.95) },
   thump: { about: 'глухой низ: «приземление» тяжёлого объекта', dur: 0.5, gen: (n, r, p) => tone(n, (t) => (45 + 70 * Math.exp(-t * 25)) * p, 0.003, 0.14, 1) },
 };
 

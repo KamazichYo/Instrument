@@ -7,4 +7,5 @@ node_modules/
 videos/**/out/
 videos/**/stills/
 videos/**/qa/
-videos/**/lib/
+videos/**/assets/*.wav
+videos/**/assets/*.wav.beats.json

@@ -34,7 +34,7 @@ for (const spec of vos) {
 let sfxList = [];
 if (o.sfx) {
   const j = JSON.parse(fs.readFileSync(o.sfx, 'utf8'));
-  sfxList = Array.isArray(j) ? j : (j.events || []).map((e) => ({ t: e.t, sfx: e.sfx || e.name, gain: e.gain }));
+  sfxList = Array.isArray(j) ? j : (j.events || []).map((e) => ({ t: e.t, sfx: e.sfx || e.name, gain: e.gain, pitch: e.pitch, dur: e.dur }));
 }
 sfxList.forEach((e, k) => {
   let file = e.sfx;
