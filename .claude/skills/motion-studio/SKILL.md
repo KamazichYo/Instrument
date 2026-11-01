@@ -91,6 +91,7 @@ node $S/engine/qa.mjs videos/<имя>/out/final.mp4 --expect <длина> --expe
 | объёмный заголовок, хром/неон/золото | `3d-title` |
 | пролёт камеры, витрина фич/скриншотов в пространстве | `3d-cards` |
 | шейдеры, частицы, абстракция | любой 3D-шаблон + `MG3.particles`, ShaderMaterial с `uTime` |
+| живопись маслом, иллюстрация «от руки», город/страна | `lib/paint.js` + `references/paint.md` (пример — `videos/brooklyn-alive`) |
 | нужен Remotion/HyperFrames/After Effects | `references/upstream.md` — какие паки поставить и когда |
 
 ## Чего не делать никогда
