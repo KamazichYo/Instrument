@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="mg:about" content="Анимированный график: столбцы растут, значения считаются, акцентный столбец и главная цифра. Только реальные данные">
+<title>Stat Chart</title>
+<link rel="stylesheet" href="lib/mg.css">
+<style>
+  :root { --accent:#ff5a1f; --bar:#2a2a33; --ink:#f4f2ee; --muted:#8a8a93; }
+  #stage { background: radial-gradient(100% 120% at 20% 0%, #1a1820 0%, #0b0b0f 70%); font-family:var(--sans); color:var(--ink); }
+  .wrap { position:absolute; left:calc(var(--safeL)*1px); right:calc(var(--safeR)*1px); top:calc(var(--safeT)*1px); bottom:calc(var(--safeB)*1px); display:flex; flex-direction:column; }
+  .q { font:600 calc(var(--u)*5.2)/1.1 var(--sans); letter-spacing:-0.02em; max-width:58%; }
+  .q b { color:var(--accent); font-weight:700; }
+  .chart { position:relative; flex:1; display:flex; align-items:flex-end; gap:calc(var(--u)*2.4); margin-top:calc(var(--u)*5); padding-bottom:calc(var(--u)*6); }
+  .base { position:absolute; left:0; right:0; bottom:calc(var(--u)*6); height:2px; background:rgba(244,242,238,.18); transform-origin:0 50%; }
+  .col { flex:1; height:100%; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; position:relative; }
+  .bar { width:100%; background:var(--bar); border-radius:calc(var(--u)*1.2) calc(var(--u)*1.2) 0 0; transform-origin:50% 100%; }
+  .col.hi .bar { background:var(--accent); }
+  .val { font:700 calc(var(--u)*3.6)/1 var(--sans); font-variant-numeric:tabular-nums; margin-bottom:calc(var(--u)*1.4); }
+  .col.hi .val { color:var(--accent); }
+  .lab { position:absolute; bottom:calc(var(--u)*-4.6); font:500 calc(var(--u)*2.4)/1 var(--sans); color:var(--muted); white-space:nowrap; }
+  .src { font:500 calc(var(--u)*1.9)/1 var(--sans); color:var(--muted); opacity:.8; }
+  .hero { position:absolute; right:0; top:0; text-align:right; }
+  .hero .n { font:800 calc(var(--u)*16)/0.9 var(--display); color:var(--accent); letter-spacing:-0.04em; font-variant-numeric:tabular-nums; }
+  .hero .l { font:500 calc(var(--u)*2.8)/1.2 var(--sans); color:var(--muted); margin-top:calc(var(--u)*1); }
+  .mg-portrait .hero { position:relative; text-align:left; margin-top:calc(var(--u)*4); }
+  .mg-portrait .q { max-width:100%; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="wrap">
+    <div class="q" id="q"></div>
+    <div class="hero"><div class="n" id="heroN">0</div><div class="l" id="heroL"></div></div>
+    <div class="chart" id="chart"><div class="base"></div></div>
+    <div class="src" id="src" data-small-ok></div>
+  </div>
+</div>
+<script src="lib/mg.js"></script>
+<script>
+// ====== РЕДАКТИРУЙ ЗДЕСЬ — ТОЛЬКО РЕАЛЬНЫЕ ЦИФРЫ ОТ ПОЛЬЗОВАТЕЛЯ ======
+const DATA = {
+  question: 'Сколько времени уходит на <b>монтаж</b> одного Reels',
+  unit: ' мин',
+  items: [
+    { label: 'Вручную', value: 94 },
+    { label: 'Шаблон', value: 52 },
+    { label: 'CapCut', value: 38 },
+    { label: 'Instrument', value: 7, hi: true },
+  ],
+  hero: { value: 13, suffix: '×', label: 'быстрее, чем вручную' },
+  source: 'Пример данных — замени на свои',
+};
+// ======================================================================
+document.getElementById('q').innerHTML = DATA.question;
+document.getElementById('heroL').textContent = DATA.hero.label;
+document.getElementById('src').textContent = DATA.source;
+const chart = document.getElementById('chart');
+const max = Math.max(...DATA.items.map((d) => d.value));
+DATA.items.forEach((d) => {
+  const c = document.createElement('div'); c.className = 'col' + (d.hi ? ' hi' : '');
+  c.innerHTML = `<div class="val">0</div><div class="bar" style="height:calc(${(d.value / max) * 78}% )"></div><div class="lab">${d.label}</div>`;
+  chart.appendChild(c);
+});
+
+const comp = MG.comp({ format: '16:9', fps: 30, duration: 7, bg: '#0b0b0f' });
+const tl = comp.tl();
+comp.setup(() => {
+  const u = Math.min(comp.width, comp.height) / 100;
+  const qWords = MG.split('#q', 'words');
+  tl.from(qWords, { y: 3 * u, opacity: 0, blur: 8 }, { at: 0.1, dur: 0.5, ease: 'land', stagger: 0.07 });
+  tl.from('.base', { scaleX: 0 }, { at: 0.6, dur: 0.7, ease: 'land' });
+  const cols = [...document.querySelectorAll('.col')];
+  cols.forEach((c, i) => {
+    const at = 0.9 + i * 0.18, d = DATA.items[i];
+    tl.from(c.querySelector('.bar'), { scaleY: 0 }, { at, dur: 0.9, ease: 'land' });
+    tl.from(c.querySelector('.lab'), { y: 1.5 * u, opacity: 0 }, { at, dur: 0.5, ease: 'land' });
+    tl.from(c.querySelector('.val'), { opacity: 0, y: 1.2 * u }, { at: at + 0.1, dur: 0.4, ease: 'land' });
+    tl.count(c.querySelector('.val'), 0, d.value, { at, dur: 0.9, ease: 'land', format: (v) => Math.round(v) + DATA.unit });
+    comp.mark(at, 'tick');
+  });
+  // акцент: остальные столбцы приглушаются, акцентный «подпрыгивает»
+  const hiAt = 0.9 + cols.length * 0.18 + 0.7;
+  cols.forEach((c, i) => { if (!DATA.items[i].hi) tl.to(c, { opacity: 0.35 }, { at: hiAt, dur: 0.5, ease: 'swift' }); });
+  const hi = document.querySelector('.col.hi .bar');
+  if (hi) tl.fromTo(hi, { scaleX: 1 }, { scaleX: 1.08 }, { at: hiAt, dur: 0.12, ease: 'out' }).to(hi, { scaleX: 1 }, { at: hiAt + 0.12, ease: { spring: { stiffness: 300, damping: 14 } } });
+  comp.mark(hiAt, 'pop');
+  // главная цифра
+  tl.from('.hero', { y: 4 * u, opacity: 0, blur: 10, scale: 1.6 }, { at: hiAt + 0.3, dur: 0.7, ease: 'land' });
+  tl.count('#heroN', 1, DATA.hero.value, { at: hiAt + 0.3, dur: 1.1, ease: 'expo.out', format: (v) => Math.round(v) + DATA.hero.suffix });
+  comp.mark(hiAt + 0.3, 'impact');
+  tl.from('#src', { opacity: 0 }, { at: hiAt + 1, dur: 0.6, ease: 'swift' });
+  // лёгкий наезд камеры — кадр живёт до конца
+  tl.fromTo('.wrap', { scale: 1 }, { scale: 1.025 }, { at: 0, dur: 7, ease: 'linear' });
+});
+</script>
+</body>
+</html>

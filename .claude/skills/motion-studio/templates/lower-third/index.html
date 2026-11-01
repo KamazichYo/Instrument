@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="mg:about" content="Плашка с именем (lower third) — прозрачный фон, рендер в .mov с альфой для CapCut/Premiere/Resolve">
+<title>Lower Third</title>
+<link rel="stylesheet" href="lib/mg.css">
+<style>
+  :root { --accent:#ff5a1f; --card:#f4f2ee; --ink:#0b0b0f; }
+  /* в превью — подложка «как будто видео», в рендер не попадает */
+  .fake { position:absolute; inset:0; background: linear-gradient(135deg,#3a4a5c,#1d242c); }
+  .fake::after { content:'здесь будет видео'; position:absolute; right:3%; top:3%; color:rgba(255,255,255,.3); font:500 calc(var(--u)*2)/1 var(--sans); }
+  .lt { position:absolute; left:calc(var(--safeL)*1px); bottom:calc(var(--safeB)*1px + var(--u)*2); display:flex; align-items:stretch; gap:calc(var(--u)*1.2); }
+  .bar { width:calc(var(--u)*0.9); background:var(--accent); border-radius:calc(var(--u)*0.5); transform-origin:50% 100%; }
+  .box { background:var(--card); color:var(--ink); padding:calc(var(--u)*1.8) calc(var(--u)*3) calc(var(--u)*1.9) calc(var(--u)*2.4); border-radius:calc(var(--u)*1.4); }
+  .name { font:700 calc(var(--u)*4.4)/1.05 var(--sans); letter-spacing:-0.02em; }
+  .role { font:500 calc(var(--u)*2.6)/1.2 var(--sans); color:#55555e; margin-top:calc(var(--u)*0.6); }
+  .handle { display:inline-flex; align-items:center; gap:calc(var(--u)*0.8); margin-top:calc(var(--u)*1.2); font:600 calc(var(--u)*2.3)/1 var(--mono); color:var(--accent); }
+  .dot { width:calc(var(--u)*1); height:calc(var(--u)*1); border-radius:50%; background:var(--accent); }
+  .mg-portrait .lt { left:calc(var(--safeL)*1px); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="fake" data-preview-only></div>
+  <div class="lt">
+    <div class="bar"></div>
+    <div class="box">
+      <div class="name" id="name">Анна Смирнова</div>
+      <div class="role" id="role">моушн-дизайнер, 8 лет в рекламе</div>
+      <div class="handle"><span class="dot"></span><span id="handle">@anna.motion</span></div>
+    </div>
+  </div>
+</div>
+<script src="lib/mg.js"></script>
+<script>
+// ====== РЕДАКТИРУЙ ЗДЕСЬ ======
+const DATA = { name: 'Анна Смирнова', role: 'моушн-дизайнер, 8 лет в рекламе', handle: '@anna.motion' };
+const HOLD = 3.2;  // сколько держится на экране
+// ===============================
+for (const k in DATA) document.getElementById(k).textContent = DATA[k];
+const IN = 0.9, OUT = 0.5;
+// рендер с --alpha → прозрачный фон (.mov ProRes 4444); без --alpha — на тёмном фоне для проверки
+const comp = MG.comp({ format: '16:9', fps: 30, duration: IN + HOLD + OUT, bg: '#101014' });
+const tl = comp.tl();
+comp.setup(() => {
+  const u = Math.min(comp.width, comp.height) / 100;
+  // вход: полоска растёт, карточка раскрывается маской слева направо, строки выезжают по очереди
+  tl.from('.bar', { scaleY: 0 }, { at: 0, dur: 0.45, ease: 'land' })
+    .from('.box', { clipR: 100, x: -2 * u }, { at: 0.12, dur: 0.6, ease: 'land' })
+    .from(['#name', '#role', '.handle'], { y: 2.5 * u, opacity: 0, blur: 4 }, { at: 0.3, dur: 0.5, ease: 'land', stagger: 0.08 });
+  comp.mark(0.1, 'swish');
+  // пока держится — точка «дышит»
+  tl.call((t) => { document.querySelector('.dot').style.transform = `scale(${1 + 0.18 * Math.sin(t * 5)})`; }, { at: 0, dur: IN + HOLD + OUT });
+  // выход: всё уезжает влево с ускорением
+  const o = IN + HOLD;
+  tl.to('.box', { clipR: 100, x: -3 * u }, { at: o, dur: 0.4, ease: 'leave' })
+    .to('.bar', { scaleY: 0 }, { at: o + 0.15, dur: 0.3, ease: 'leave' });
+});
+</script>
+</body>
+</html>

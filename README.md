@@ -79,5 +79,26 @@ tests/                  тесты: npm test
 ```
 Новый инструмент = папка со своей `index.html` + плитка в `index.html` + файлы в `sw.js`.
 
+## Motion Studio — агент моушн-графики для Claude Code
+В репозитории живёт агент, который делает **любой ролик с моушн-графикой** по одному запросу:
+Reels/Shorts, YouTube-интро, промо продукта, эксплейнеры, кинетическую типографику, графики,
+логотип-стинги, плашки, анимированные субтитры, перебивки к говорящей голове.
+
+Открой репозиторий в Claude Code и напиши, например: «сделай Reels на 10 секунд про Instrument»
+(или вызови агента `motion-director` / скилл `/motion-studio`).
+
+| Что | Где |
+|---|---|
+| Агент-режиссёр | `.claude/agents/motion-director.md` |
+| Скилл: пайплайн, законы движения, жанры, форматы, звук | `.claude/skills/motion-studio/` (`SKILL.md`, `references/`) |
+| Движок: HTML → MP4 / MOV с альфой / WebM / GIF, линтер, QA, биты, слова из .srt, синтез звуков и музыки, сведение −14 LUFS, наложение на видео | `.claude/skills/motion-studio/engine/` |
+| Шаблоны: kinetic-type, product-promo, stat-chart, logo-sting, lower-third, captions, blank | `.claude/skills/motion-studio/templates/` |
+| Лучшие сторонние паки (HyperFrames, Remotion, пак Bart Slodyczka, motionmaxxing, LottieFiles…) | `bash .claude/skills/motion-studio/scripts/install-upstream.sh --list` |
+
+Всё работает офлайн: нужны только Node 18+, ffmpeg и Playwright (`bash .claude/skills/motion-studio/engine/setup.sh`).
+Шрифты с кириллицей (Inter, Unbounded, Manrope, JetBrains Mono, SIL OFL) лежат в движке.
+Стыкуется с инструментами: `.srt` из «Субтитров» → тайминги графики, голос из «Звука» → сведение.
+Проекты роликов — в `videos/<имя>/` (рендеры в git не попадают).
+
 ## Публикация
 GitHub Pages: Settings → Pages → Source: **GitHub Actions**. Каждый пуш в `main` прогоняет тесты и публикует сайт (`.github/workflows/pages.yml`).

@@ -1,2 +1,10 @@
 node_modules/
 .DS_Store
+# Motion Studio: сторонние паки (ставятся scripts/install-upstream.sh), рендеры и зависимости движка
+.claude/skills/up-*/
+.claude/skills/motion-studio/engine/node_modules/
+.claude/skills/motion-studio/engine/package*.json
+videos/**/out/
+videos/**/stills/
+videos/**/qa/
+videos/**/lib/

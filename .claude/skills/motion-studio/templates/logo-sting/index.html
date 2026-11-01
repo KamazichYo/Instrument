@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="mg:about" content="Логотип-стинг 3–4 с: фигуры собираются в знак, надпись выезжает из-под маски, блик. Интро/аутро канала">
+<title>Logo Sting</title>
+<link rel="stylesheet" href="lib/mg.css">
+<style>
+  :root { --c1:#ff5a1f; --c2:#ffd23f; --c3:#4f7cff; --c4:#f4f2ee; --bg1:#16131c; --bg2:#08080b; }
+  #stage { background: radial-gradient(90% 90% at 50% 45%, var(--bg1) 0%, var(--bg2) 75%); }
+  .cam { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+  .lockup { display:flex; align-items:center; gap:calc(var(--u)*5); }
+  .mark { position:relative; width:calc(var(--u)*20); height:calc(var(--u)*20); flex:none; }
+  .sh { position:absolute; width:50%; height:50%; }
+  .sh1 { left:0; top:0; background:var(--c1); border-radius:50%; }
+  .sh2 { right:0; top:0; background:var(--c2); border-radius:18% 50% 18% 18%; }
+  .sh3 { left:0; bottom:0; background:var(--c3); border-radius:18%; }
+  .sh4 { right:0; bottom:0; background:var(--c4); border-radius:50% 18% 50% 50%; }
+  .word { font-family:var(--display); font-weight:700; font-size:calc(var(--u)*13); color:#f4f2ee; letter-spacing:-0.03em; line-height:1; position:relative; }
+  .tag { font-family:var(--sans); font-weight:500; font-size:calc(var(--u)*3.6); color:rgba(244,242,238,.6); margin-top:calc(var(--u)*2.2); letter-spacing:0; }
+  .shine { position:absolute; inset:-10% -5%; background:linear-gradient(105deg, transparent 35%, rgba(255,255,255,.75) 50%, transparent 65%);
+    mix-blend-mode:overlay; transform:translateX(-120%); pointer-events:none; }
+  .wrapw { position:relative; overflow:hidden; }
+  .glow { position:absolute; width:calc(var(--u)*60); height:calc(var(--u)*60); border-radius:50%; background:radial-gradient(circle, rgba(255,90,31,.35), transparent 65%); filter:blur(calc(var(--u)*4)); }
+  .mg-portrait .lockup { flex-direction:column; text-align:center; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="cam">
+    <div class="glow"></div>
+    <div class="lockup">
+      <div class="mark"><div class="sh sh1"></div><div class="sh sh2"></div><div class="sh sh3"></div><div class="sh sh4"></div></div>
+      <div>
+        <div class="wrapw"><div class="word" id="word">Instrument</div><div class="shine"></div></div>
+        <div class="tag" id="tag">монтаж прямо в телефоне</div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="lib/mg.js"></script>
+<script>
+// ====== РЕДАКТИРУЙ ЗДЕСЬ ======
+const BRAND = { name: 'Instrument', tagline: 'монтаж прямо в телефоне', colors: ['#ff5a1f', '#ffd23f', '#4f7cff', '#f4f2ee'] };
+// Свой логотип: замени .mark на <img src="assets/logo.svg"> — анимация знака та же (класс .mark)
+// ===============================
+document.getElementById('word').textContent = BRAND.name;
+document.getElementById('tag').textContent = BRAND.tagline;
+BRAND.colors.forEach((c, i) => document.documentElement.style.setProperty('--c' + (i + 1), c));
+
+const comp = MG.comp({ format: '16:9', fps: 30, duration: 4.2, bg: '#08080b' });
+const tl = comp.tl();
+comp.setup(() => {
+  const u = Math.min(comp.width, comp.height) / 100;
+  const letters = MG.split('#word', 'chars');
+  MG.mask(letters, '0.18em');
+  // 1) фигуры влетают из-за кадра с перебором масштаба и размытием, каждая своей траекторией
+  const from = [[-60, -45, -140], [60, -50, 160], [-55, 50, 120], [65, 45, -160]];
+  document.querySelectorAll('.sh').forEach((el, i) => {
+    const [x, y, r] = from[i];
+    tl.from(el, { x: x * u, y: y * u, rotate: r, scale: 3.2, blur: 18, opacity: 0 }, { at: 0.05 + i * 0.07, dur: 0.75, ease: 'land' });
+  });
+  // 2) знак «щёлкает»: сжатие и отдача — физика удара
+  tl.fromTo('.mark', { scale: 1 }, { scale: 0.86 }, { at: 0.78, dur: 0.07, ease: 'out' })
+    .to('.mark', { scale: 1 }, { at: 0.85, ease: { spring: { stiffness: 380, damping: 18 } } })
+    .fromTo('.mark', { rotate: -8 }, { rotate: 0 }, { at: 0.05, dur: 1.4, ease: 'land' });
+  comp.mark(0.3, 'whoosh').mark(0.8, 'impact');
+  // 3) надпись выезжает буквами из-под маски
+  tl.from(letters, { yp: 110 }, { at: 0.95, dur: 0.6, ease: 'land', stagger: 0.028 });
+  tl.from('#tag', { y: 0.8 * u * 3, opacity: 0, blur: 6 }, { at: 1.45, dur: 0.6, ease: 'land' });
+  comp.mark(1.0, 'swish');
+  // 4) блик по надписи
+  tl.fromTo('.shine', { xp: -120 }, { xp: 120 }, { at: 1.9, dur: 0.8, ease: 'glide' });
+  comp.mark(1.95, 'sparkle');
+  // 3б) знак сначала один в центре кадра — надпись появляется и «сдвигает» его на место
+  const shift = (document.querySelector('.lockup').getBoundingClientRect().width - document.querySelector('.mark').getBoundingClientRect().width) / 2;
+  if (!comp.portrait) tl.fromTo('.lockup', { x: shift }, { x: 0 }, { at: 0.9, dur: 0.75, ease: 'land' });
+  // 5) камера: едва заметный наезд всю дорогу + свечение дышит
+  tl.fromTo('.cam', { scale: 1.06 }, { scale: 1 }, { at: 0, dur: 4.2, ease: 'out' });
+  tl.fromTo('.glow', { scale: 0.4, opacity: 0 }, { scale: 1, opacity: 1 }, { at: 0.75, dur: 1.4, ease: 'land' });
+  // 6) аутро: уход вперёд с размытием (можно удалить, если стинг стыкуется со следующей сценой)
+  tl.to('.lockup', { scale: 1.12, opacity: 0, blur: 14 }, { at: 3.75, dur: 0.4, ease: 'leave' });
+});
+</script>
+</body>
+</html>

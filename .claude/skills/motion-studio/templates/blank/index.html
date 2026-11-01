@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="mg:about" content="Чистый лист с подсказками по API: своя сцена с нуля (DOM, SVG, canvas, three.js, GSAP)">
+<title>Blank</title>
+<link rel="stylesheet" href="lib/mg.css">
+<style>
+  #stage { background:#0b0b0f; font-family:var(--sans); color:var(--paper); }
+  .title { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font:700 calc(var(--u)*10)/1 var(--display); letter-spacing:-0.03em; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div class="title" id="title">Привет</div>
+</div>
+<script src="lib/mg.js"></script>
+<script>
+/* Шпаргалка MG
+   const comp = MG.comp({ format:'16:9'|'9:16'|'1:1'|'4:5', fps:30, duration:6, bg:'#000' });
+   const tl = comp.tl();
+   tl.from(sel, {x,y,scale,rotate,opacity,blur,clipT..clipL,xp,yp,'--var':0,color:'#f00'}, {at, dur, ease, stagger})
+   tl.to / fromTo / set(sel, props, at) / count(sel, a, b, {at,dur,format}) / type(sel, text, {at,cps,seed}) / call(fn(local,p), {at,dur})
+   ease: 'land' (приземление) 'leave' (уход) 'swift' 'snap' 'glide' 'expo.out' 'back.out' [x1,y1,x2,y2] {spring:{stiffness,damping}}
+   MG.split(sel,'words'|'chars') · MG.mask(els) · MG.fit(sel, maxWidthPx) · MG.rng(seed) · MG.noise(x) · MG.p(t,at,dur,ease)
+   comp.setup(() => {...})  — сборка после загрузки шрифтов (замеры, fit)
+   comp.onSeek(t => {...})  — ручная отрисовка каждого кадра (canvas, three.js, GSAP: t => gsapTl.seek(t))
+   comp.mark(t, 'whoosh')   — метка для звука (mix.mjs возьмёт из <out>.events.json)
+   CSS: --u = 1% меньшей стороны, --W/--H, .safe — безопасная зона, [data-preview-only] — только в превью
+*/
+const comp = MG.comp({ format: '16:9', fps: 30, duration: 4, bg: '#0b0b0f' });
+const tl = comp.tl();
+comp.setup(() => {
+  const chars = MG.split('#title', 'chars');
+  tl.from(chars, { y: 80, opacity: 0, blur: 10 }, { at: 0.2, dur: 0.6, ease: 'land', stagger: 0.05 });
+  comp.mark(0.2, 'swish');
+  // canvas: детерминированные частицы — всё из t и seed, никакого накопленного состояния
+  const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+  cv.width = comp.width; cv.height = comp.height;
+  const r = MG.rng(42), pts = Array.from({ length: 120 }, () => ({ x: r(), y: r(), s: 0.3 + r(), ph: r() * 6.28 }));
+  comp.onSeek((t) => {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    for (const p of pts) {
+      const x = (p.x + t * 0.02 * p.s) % 1 * cv.width, y = (p.y + Math.sin(t * p.s + p.ph) * 0.01) * cv.height;
+      ctx.globalAlpha = 0.25 + 0.25 * Math.sin(t * 2 + p.ph);
+      ctx.fillStyle = '#ff5a1f'; ctx.beginPath(); ctx.arc(x, y, 2 + 3 * p.s, 0, 6.283); ctx.fill();
+    }
+  });
+});
+</script>
+</body>
+</html>

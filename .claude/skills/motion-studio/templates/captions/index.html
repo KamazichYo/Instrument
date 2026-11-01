@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="mg:about" content="Анимированные субтитры из .srt (караоке, по слову, плашка) — прозрачный оверлей 9:16 для Reels/Shorts">
+<title>Captions</title>
+<link rel="stylesheet" href="lib/mg.css">
+<style>
+  :root { --hi:#ffd23f; --txt:#ffffff; --box:#ff5a1f; }
+  .fake { position:absolute; inset:0; background:linear-gradient(160deg,#4b5563,#111827); }
+  .zone { position:absolute; left:calc(var(--safeL)*1px); right:calc(var(--safeR)*1px); bottom:calc(var(--safeB)*1px + var(--u)*6); display:flex; justify-content:center; }
+  .mg-top .zone { bottom:auto; top:calc(var(--safeT)*1px + var(--u)*4); }
+  .mg-mid .zone { bottom:auto; top:50%; transform:translateY(-50%); }
+  .cap { position:relative; text-align:center; font:800 calc(var(--u)*8.2)/1.12 var(--sans); letter-spacing:-0.01em; color:var(--txt);
+    paint-order:stroke fill; -webkit-text-stroke:calc(var(--u)*1.1) #000; text-shadow:0 calc(var(--u)*0.5) calc(var(--u)*1.2) rgba(0,0,0,.45); }
+  .cap .w { margin:0 0.08em; position:relative; }
+  .cap .w.on { color:var(--hi); }
+  .s-box .cap { -webkit-text-stroke:0; text-shadow:none; }
+  .s-box .cap .w.on { color:#fff; }
+  .s-box .cap .w.on::before { content:''; position:absolute; inset:-0.04em -0.14em; background:var(--box); border-radius:0.16em; z-index:-1; }
+  .s-upper .cap { text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="fake" data-preview-only></div>
+  <div class="zone"><div class="cap" id="cap"></div></div>
+</div>
+<!-- Слова: node engine/words.mjs speech.srt --embed index.html  (подставит сюда тайминги) -->
+<script id="words" type="application/json">
+{"words":[
+ {"w":"Монтаж","s":0.30,"e":0.75},{"w":"больше","s":0.75,"e":1.10},{"w":"не","s":1.10,"e":1.25},{"w":"занимает","s":1.25,"e":1.80},{"w":"часы.","s":1.80,"e":2.40},
+ {"w":"Один","s":2.80,"e":3.05},{"w":"промпт","s":3.05,"e":3.50},{"w":"—","s":3.50,"e":3.60},{"w":"и","s":3.60,"e":3.75},{"w":"ролик","s":3.75,"e":4.20},{"w":"готов.","s":4.20,"e":4.90}
+]}
+</script>
+<script src="lib/mg.js"></script>
+<script>
+// ====== РЕДАКТИРУЙ ЗДЕСЬ ======
+const STYLE = {
+  mode: 'karaoke',   // karaoke — фраза, текущее слово цветом · word — по одному слову крупно · box — плашка под текущим словом
+  maxWords: 3,       // слов в группе (Shorts: 2–4)
+  position: 'bottom',// bottom · mid · top
+  upper: false,      // ЗАГЛАВНЫМИ
+  gap: 0.45,         // пауза (с), после которой начинается новая группа
+};
+const FORMAT = '9:16';
+// ===============================
+const W = JSON.parse(document.getElementById('words').textContent).words.map((w) => ({ ...w, w: w.w.trim() })).filter((w) => w.w);
+const DUR = Math.ceil(((W.at(-1)?.e || 3) + 0.6) * 10) / 10;
+const html = document.documentElement;
+if (STYLE.position !== 'bottom') html.classList.add('mg-' + STYLE.position);
+if (STYLE.mode === 'box') html.classList.add('s-box');
+if (STYLE.upper) html.classList.add('s-upper');
+
+// группы: не больше maxWords и разрыв на паузе или конце предложения
+const groups = []; let g = [];
+W.forEach((w, i) => {
+  const prev = W[i - 1];
+  const brk = g.length >= (STYLE.mode === 'word' ? 1 : STYLE.maxWords) || (prev && (w.s - prev.e > STYLE.gap || /[.!?…]$/.test(prev.w)));
+  if (g.length && brk) { groups.push(g); g = []; }
+  g.push(w);
+});
+if (g.length) groups.push(g);
+
+const comp = MG.comp({ format: FORMAT, fps: 30, duration: DUR, bg: '#111827' });
+const cap = document.getElementById('cap');
+let shown = -1;
+comp.setup(() => {
+  const maxW = comp.width - comp.safe.L - comp.safe.R;
+  comp.onSeek((t) => {
+    // активная группа: от начала первого слова до начала следующей группы (или +0.4 с после конца)
+    let gi = -1;
+    for (let i = 0; i < groups.length; i++) { const end = groups[i + 1] ? Math.min(groups[i + 1][0].s, groups[i].at(-1).e + 0.6) : groups[i].at(-1).e + 0.5; if (t >= groups[i][0].s - 0.05 && t < end) gi = i; }
+    if (gi !== shown) {
+      shown = gi;
+      cap.innerHTML = gi < 0 ? '' : groups[gi].map((w) => `<span class="w">${w.w.replace(/</g, '&lt;')}</span>`).join(' ');
+      cap.style.fontSize = ''; if (gi >= 0) { cap.style.whiteSpace = 'normal'; if (cap.scrollWidth > maxW) MG.fit(cap, maxW); }
+    }
+    if (gi < 0) return;
+    const grp = groups[gi], spans = cap.querySelectorAll('.w');
+    // вход группы: «поп» из 1.25 с пружиной
+    const local = t - grp[0].s;
+    const sp = MG.spring({ stiffness: 520, damping: 22 }).f(Math.max(0, local));
+    cap.style.transform = `scale(${(1.25 - 0.25 * sp).toFixed(4)})`;
+    cap.style.opacity = Math.min(1, Math.max(0, local / 0.06 + 1)).toFixed(3);
+    grp.forEach((w, k) => {
+      const on = t >= w.s && (k === grp.length - 1 || t < grp[k + 1].s);
+      spans[k].classList.toggle('on', on && STYLE.mode !== 'word');
+      const lw = t - w.s; // каждое слово чуть подпрыгивает в момент произнесения
+      const b = lw >= 0 && lw < 0.25 ? Math.sin((lw / 0.25) * Math.PI) * 0.08 : 0;
+      spans[k].style.transform = `translateY(${(-b * 60).toFixed(2)}%) scale(${(1 + b).toFixed(3)})`;
+      spans[k].style.opacity = STYLE.mode === 'karaoke' || STYLE.mode === 'box' ? (t >= w.s - 0.02 ? 1 : 0.55) : 1;
+    });
+  });
+});
+</script>
+</body>
+</html>

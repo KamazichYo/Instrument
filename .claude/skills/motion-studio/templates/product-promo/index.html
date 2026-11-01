@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="mg:about" content="Промо продукта 9 с: хук → окно приложения, курсор кликает, печатает запрос, появляются результаты → наезд на результат → логотип">
+<title>Product Promo</title>
+<link rel="stylesheet" href="lib/mg.css">
+<style>
+  :root { --accent:#5b5bff; --accent2:#22c55e; --paper:#f4f2ee; --ink:#0f0f14; --line:#e3e1dc; --muted:#7b7b85; }
+  #stage { background: radial-gradient(120% 100% at 50% 0%, #fbfaf7 0%, #ebe8e1 100%); color:var(--ink); font-family:var(--sans); }
+  .cam { position:absolute; inset:0; transform-origin:50% 50%; }
+  .hook { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:0 calc(var(--safeR)*1px) 0 calc(var(--safeL)*1px); }
+  .hook h1 { font:700 calc(var(--u)*9)/1.02 var(--display); letter-spacing:-0.035em; }
+  .hook h1 em { font-style:normal; color:var(--accent); }
+  .win { position:absolute; left:50%; top:50%; width:calc(var(--u)*140); max-width:90%; height:calc(var(--u)*80); transform:translate(-50%,-50%);
+    background:#fff; border-radius:calc(var(--u)*2.2); box-shadow:0 calc(var(--u)*3) calc(var(--u)*8) rgba(20,18,30,.16), 0 0 0 1px rgba(0,0,0,.05); overflow:hidden; }
+  .bar { height:calc(var(--u)*5.5); display:flex; align-items:center; gap:calc(var(--u)*0.9); padding:0 calc(var(--u)*2); border-bottom:1px solid var(--line); }
+  .bar i { width:calc(var(--u)*1.3); height:calc(var(--u)*1.3); border-radius:50%; background:#e2e0da; display:block; }
+  .bar span { margin-left:auto; margin-right:auto; font:600 calc(var(--u)*2)/1 var(--sans); color:var(--muted); }
+  .body { padding:calc(var(--u)*4); }
+  .search { display:flex; align-items:center; gap:calc(var(--u)*1.6); height:calc(var(--u)*9); padding:0 calc(var(--u)*2.4); border:2px solid var(--line); border-radius:calc(var(--u)*1.6); font:500 calc(var(--u)*3.4)/1 var(--sans); }
+  .search.focus { border-color:var(--accent); box-shadow:0 0 0 calc(var(--u)*0.8) color-mix(in srgb, var(--accent) 18%, transparent); }
+  .search svg { width:calc(var(--u)*3.4); height:calc(var(--u)*3.4); flex:none; color:var(--muted); }
+  .ph { color:#b3b1ab; }
+  .res { margin-top:calc(var(--u)*3); display:flex; flex-direction:column; gap:calc(var(--u)*1.6); }
+  .row { display:flex; align-items:center; gap:calc(var(--u)*2.2); padding:calc(var(--u)*1.6); border-radius:calc(var(--u)*1.6); background:#f7f6f3; position:relative; }
+  .thumb { width:calc(var(--u)*12); height:calc(var(--u)*7); border-radius:calc(var(--u)*1); flex:none; }
+  .row b { display:block; font:600 calc(var(--u)*3)/1.15 var(--sans); }
+  .row small { display:block; font:500 calc(var(--u)*2.2)/1.2 var(--mono); color:var(--muted); margin-top:calc(var(--u)*0.6); }
+  .row .ok { margin-left:auto; width:calc(var(--u)*5); height:calc(var(--u)*5); border-radius:50%; background:var(--accent2); color:#fff; display:flex; align-items:center; justify-content:center; }
+  .row .ok svg { width:55%; height:55%; }
+  .row.sel { background:color-mix(in srgb, var(--accent) 10%, #fff); outline:2px solid var(--accent); }
+  .cursor { position:absolute; left:0; top:0; width:calc(var(--u)*4.4); height:calc(var(--u)*4.4); z-index:10; transform-origin:10% 8%; filter:drop-shadow(0 calc(var(--u)*0.4) calc(var(--u)*0.6) rgba(0,0,0,.3)); }
+  .end { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:calc(var(--u)*2); background:var(--ink); color:var(--paper); }
+  .end .logo { font:700 calc(var(--u)*10)/1 var(--display); letter-spacing:-0.04em; }
+  .end .cta { font:500 calc(var(--u)*3.2)/1 var(--sans); color:rgba(244,242,238,.7); }
+  .end .cta b { color:var(--paper); }
+  /* вертикаль: интерфейс крупнее — на телефоне UI читают глазами камеры, а не мелким шрифтом */
+  .mg-portrait #stage { --u: calc(var(--H) * 0.0078px); }
+  .mg-portrait .win { max-width:94%; height:58%; }
+  .mg-portrait .end .cta { font-size:calc(var(--u)*2.4); text-align:center; padding:0 6%; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="cam" id="cam">
+    <div class="win" id="win">
+      <div class="bar"><i></i><i></i><i></i><span id="app"></span></div>
+      <div class="body">
+        <div class="search" id="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span id="q" class="ph"></span></div>
+        <div class="res" id="res"></div>
+      </div>
+    </div>
+    <svg class="cursor" id="cursor" viewBox="0 0 24 24"><path d="M4 2.5 19.5 12l-6.6 1.5 3.9 7.2-2.6 1.4-3.9-7.3L5 19.6z" fill="#111" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg>
+  </div>
+  <div class="hook" id="hook"><h1 id="hookT"></h1></div>
+  <div class="end" id="end"><div class="logo" id="logo"></div><div class="cta" id="cta"></div></div>
+</div>
+<script src="lib/mg.js"></script>
+<script>
+// ====== РЕДАКТИРУЙ ЗДЕСЬ ======
+const P = {
+  hook: 'Нужный кадр — <em>за секунду</em>',
+  app: 'Instrument — Поиск по видео',
+  placeholder: 'Опиши кадр…',
+  query: 'закат над морем, крупный план',
+  results: [
+    { title: 'Закат, волны, крупно', meta: 'IMG_2041.MOV · 00:14', color: 'linear-gradient(135deg,#ff9a3c,#ff4f6d)' },
+    { title: 'Берег на закате', meta: 'IMG_1988.MOV · 01:02', color: 'linear-gradient(135deg,#f9c74f,#f3722c)' },
+    { title: 'Море, вечер, дрон', meta: 'DJI_0112.MP4 · 00:37', color: 'linear-gradient(135deg,#4cc9f0,#4361ee)' },
+  ],
+  pick: 0,
+  logo: 'Instrument',
+  cta: 'Бесплатно · <b>kamazichyo.github.io/Instrument</b>',
+};
+// ===============================
+document.getElementById('hookT').innerHTML = P.hook;
+document.getElementById('app').textContent = P.app;
+document.getElementById('logo').textContent = P.logo;
+document.getElementById('cta').innerHTML = P.cta;
+const check = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
+document.getElementById('res').innerHTML = P.results.map((r, i) => `<div class="row"><div class="thumb" style="background:${r.color}"></div><div><b>${r.title}</b><small>${r.meta}</small></div>${i === P.pick ? `<div class="ok">${check}</div>` : ''}</div>`).join('');
+
+const comp = MG.comp({ format: '16:9', fps: 30, duration: 9, bg: '#ebe8e1' });
+const tl = comp.tl();
+comp.setup(() => {
+  const u = Math.min(comp.width, comp.height) / 100;
+  const stageRect = comp.stage.getBoundingClientRect();
+  const center = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return [r.left + r.width / 2 - stageRect.left, r.top + r.height / 2 - stageRect.top]; };
+  const rows = [...document.querySelectorAll('.row')];
+  MG.fit('#logo', comp.width - comp.safe.L - comp.safe.R);
+
+  // 0–1.5 ХУК: слова влетают в ритм, затем уезжают вверх — окно уже въезжает (стык на движении)
+  const hw = MG.split('#hookT', 'words');
+  tl.from(hw, { y: 6 * u, opacity: 0, blur: 12, scale: 1.4 }, { at: 0.1, dur: 0.55, ease: 'land', stagger: 0.12 });
+  tl.to('#hook', { y: -14 * u, opacity: 0, blur: 14 }, { at: 1.45, dur: 0.3, ease: 'leave' });
+  comp.mark(0.1, 'swish');
+
+  // 1.5 ОКНО въезжает снизу, камера уже чуть приближена
+  tl.fromTo('#win', { yp: 40, opacity: 0, scale: 0.92, rotateX: 18 }, { yp: -50, opacity: 1, scale: 1, rotateX: 0 }, { at: 1.4, dur: 0.9, ease: 'land' });
+  tl.set('#win', { xp: -50 }, 0);
+  comp.mark(1.45, 'whoosh');
+
+  // 2.2 КУРСОР входит крупным (3×) и приземляется на поле поиска; клик со сжатием
+  const [sx, sy] = center('#search');
+  const cur = '#cursor';
+  tl.fromTo(cur, { x: comp.width * 0.9, y: comp.height * 1.05, scale: 3, opacity: 0 }, { x: sx - 18 * u, y: sy - 1 * u, scale: 1, opacity: 1 }, { at: 2.1, dur: 0.7, ease: 'land' });
+  tl.to(cur, { scale: 0.82 }, { at: 2.95, dur: 0.06, ease: 'out' }).to(cur, { scale: 1 }, { at: 3.01, dur: 0.18, ease: 'out' });
+  tl.call((t, p) => document.getElementById('search').classList.toggle('focus', p > 0), { at: 3.0, dur: 0 });
+  comp.mark(2.97, 'click');
+
+  // КАМЕРА (курсор внутри #cam — масштабируется вместе со сценой)
+  const camTo = (px, py, sc) => ({ scale: sc, x: (comp.width / 2 - px) * sc, y: (comp.height / 2 - py) * sc });
+  const sr = document.getElementById('search').getBoundingClientRect();
+  tl.fromTo('#cam', { scale: 1.04, x: 0, y: 0 }, { scale: 1, x: 0, y: 0 }, { at: 1.4, dur: 1.0, ease: 'land' });
+  // во время печати — наезд на поле ввода: текст читается, кадр живёт
+  const zSearch = Math.min(1.9, (comp.width * 0.92) / (sr.width * 0.75));
+  tl.to('#cam', camTo(sr.left - stageRect.left + sr.width * 0.36, sy, zSearch), { at: 2.75, dur: 1.0, ease: 'glide' });
+
+  // 3.1 ПЕЧАТЬ запроса — живой неровный ритм
+  const q = document.getElementById('q');
+  tl.call((t, p) => { if (p === 0) { q.textContent = P.placeholder; q.className = 'ph'; } else q.className = ''; }, { at: 3.1, dur: 0 });
+  tl.type('#q', P.query, { at: 3.1, cps: 22, seed: 5 });
+  for (let k = 0; k < 8; k++) comp.mark(3.1 + k * 0.15, 'type');
+  const typed = 3.1 + P.query.length / 22 + 0.1;
+
+  // РЕЗУЛЬТАТЫ — каскад
+  // результаты: отъезд, чтобы увидеть список целиком
+  const resR = document.getElementById('res').getBoundingClientRect();
+  tl.to('#cam', camTo(comp.width / 2, (sr.top + resR.bottom) / 2 - stageRect.top, Math.min(1.25, (comp.height * 0.85) / (resR.bottom - sr.top))), { at: typed - 0.15, dur: 0.7, ease: 'land' });
+  rows.forEach((r, i) => tl.from(r, { y: 3 * u, opacity: 0, blur: 6 }, { at: typed + i * 0.09, dur: 0.5, ease: 'land' }));
+  comp.mark(typed, 'pop');
+
+  // курсор едет к нужной строке, клик, выделение + галочка
+  const [rx, ry] = center(`.row:nth-child(${P.pick + 1})`);
+  const pickAt = typed + 0.55;
+  tl.to(cur, { x: rx + 10 * u, y: ry }, { at: pickAt, dur: 0.55, ease: 'swift' });
+  tl.to(cur, { scale: 0.82 }, { at: pickAt + 0.62, dur: 0.06, ease: 'out' }).to(cur, { scale: 1 }, { at: pickAt + 0.68, dur: 0.18, ease: 'out' });
+  tl.call((t, p) => rows[P.pick].classList.toggle('sel', p > 0), { at: pickAt + 0.66, dur: 0 });
+  const ok = rows[P.pick].querySelector('.ok');
+  if (ok) tl.from(ok, { scale: 0, rotate: -40 }, { at: pickAt + 0.7, ease: { spring: { stiffness: 420, damping: 16 } } });
+  comp.mark(pickAt + 0.64, 'click').mark(pickAt + 0.72, 'ding');
+
+  // КАМЕРА: наезд на выбранную строку (камера тянется к действию)
+  const zoomAt = pickAt + 0.9;
+
+  // масштаб — чтобы строка заняла ~90% ширины кадра, не больше
+  const rowW = rows[P.pick].getBoundingClientRect().width, zs = Math.min(1.8, (comp.width * 0.9) / rowW);
+  tl.to('#cam', { scale: zs, x: (comp.width / 2 - rx) * zs, y: (comp.height / 2 - ry) * zs }, { at: zoomAt, dur: 1.1, ease: 'glide' });
+  tl.to(cur, { opacity: 0 }, { at: zoomAt, dur: 0.3, ease: 'swift' });
+
+  // ФИНАЛ: шторка снизу, логотип, CTA (держится ~1 с)
+  const endAt = 7.35;
+  tl.fromTo('#end', { clipT: 100 }, { clipT: 0 }, { at: endAt, dur: 0.45, ease: 'snap' });
+  tl.from('#logo', { scale: 2.6, blur: 16, opacity: 0 }, { at: endAt + 0.2, dur: 0.6, ease: 'land' });
+  tl.from('#cta', { y: 2 * u, opacity: 0 }, { at: endAt + 0.5, dur: 0.5, ease: 'land' });
+  comp.mark(endAt, 'whoosh').mark(endAt + 0.25, 'impact');
+});
+</script>
+</body>
+</html>
