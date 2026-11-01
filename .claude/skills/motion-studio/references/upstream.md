@@ -28,6 +28,19 @@ bash $S/scripts/install-upstream.sh bart --global      # в ~/.claude/skills д�
 | [latent-spaces/brag](https://github.com/latent-spaces/brag) | 20k | MIT | одна команда: лаунч-видео про проект из кода | ролик про собственный репозиторий |
 | [zhuyansen/awesome-claude-video-skills](https://github.com/zhuyansen/awesome-claude-video-skills) | 1.4k | — | каталог 180 репозиториев видео-скиллов | искать что-то редкое |
 
+### 3D
+| Пак | ★ | Лицензия | Конёк |
+|---|---|---|---|
+| [ahujasid/mcp-for-blender](https://github.com/ahujasid/mcp-for-blender) | 33k | MIT | Claude управляет Blender: моделирование, материалы, рендер Cycles |
+| [arjun988/blender-skills](https://github.com/arjun988/blender-skills) | 1.6k | MIT | 94 скилла для Blender-пайплайна через MCP (`install-upstream.sh blender`) |
+| [viettranx/3dviz-pro-max](https://github.com/viettranx/3dviz-pro-max) | 1k | MIT | режиссура 3D-сцен: разбор объекта, свет, камера (`3dviz`) |
+| [scottstts/Threejs-Awesome-Graphics-Agent-Skills](https://github.com/scottstts/Threejs-Awesome-Graphics-Agent-Skills) | 1k | MIT | процедурные материалы, вода, облака, атмосфера, планеты (`threejs`) |
+| [majidmanzarpour/threejs-game-skills](https://github.com/majidmanzarpour/threejs-game-skills) | 2.7k | MIT | AAA-графика three.js для игр — приёмы света и пост-обработки те же |
+| [iart-ai/webgl-animation-skills](https://github.com/iart-ai/webgl-animation-skills) | 50 | MIT | three.js-анимация, GLSL, частицы |
+| Meshy (`meshy-3d-agent` в аккаунте) | — | — | генерация 3D-моделей из текста/картинки, риг, анимация → GLB |
+
+Важно: почти все three.js-скиллы писались для интерактива в реальном времени (`clock.getDelta`). Для видео бери их приёмы, а анимацию делай функцией t (см. `3d.md`).
+
 Интеграции с монтажками: [after-effects-mcp](https://github.com/Engine-Room-Games/after-effects-mcp) (MIT) — Claude управляет After Effects; DaVinci Resolve — `appariciojunior/video-editor-skills`.
 
 ## Русскоязычные

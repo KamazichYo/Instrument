@@ -93,6 +93,7 @@ Reels/Shorts, YouTube-интро, промо продукта, эксплейн�
 | Скилл: пайплайн, законы движения, жанры, форматы, звук | `.claude/skills/motion-studio/` (`SKILL.md`, `references/`) |
 | Движок: HTML → MP4 / MOV с альфой / WebM / GIF, линтер, QA, биты, слова из .srt, синтез звуков и музыки, сведение −14 LUFS, наложение на видео | `.claude/skills/motion-studio/engine/` |
 | Шаблоны: kinetic-type, product-promo, stat-chart, logo-sting, lower-third, captions, blank | `.claude/skills/motion-studio/templates/` |
+| 3D (three.js + MG3): 3d-hero (объект или своя GLB-модель), 3d-title (объёмный текст с кириллицей), 3d-cards (пролёт камеры) | `templates/3d-*`, `references/3d.md` |
 | Лучшие сторонние паки (HyperFrames, Remotion, пак Bart Slodyczka, motionmaxxing, LottieFiles…) | `bash .claude/skills/motion-studio/scripts/install-upstream.sh --list` |
 
 Всё работает офлайн: нужны только Node 18+, ffmpeg и Playwright (`bash .claude/skills/motion-studio/engine/setup.sh`).

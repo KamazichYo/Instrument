@@ -1,6 +1,6 @@
 ---
 name: motion-studio
-description: Моушн-студия в коде — делает любой ролик с моушн-графикой: кинетическую типографику, промо и лаунч-ролики продукта, эксплейнеры, B-roll и перебивки для говорящей головы, анимированные графики и цифры, логотип-стинги, плашки с именем (lower third), анимированные субтитры, лупы и GIF, вертикальные Reels/Shorts/TikTok и горизонтальный YouTube. Пишет HTML-композицию, рендерит покадрово в MP4/MOV с альфой/WebM/GIF, синтезирует звуки и музыку с точной сеткой битов, сводит на −14 LUFS и сам проверяет результат цифрами. Use when the user asks to make, plan, storyboard, animate, render, fix or critique a motion graphic, video, promo, reel, intro, outro, captions, overlay, animated chart or any "ролик / видео / анимация / моушн".
+description: Моушн-студия в коде — делает любой ролик с моушн-графикой, включая 3D (three.js: герой-объекты, объёмный текст с кириллицей, хром/стекло/неон, пролёты камеры, свои GLB-модели из Meshy/Spline/Blender): кинетическую типографику, промо и лаунч-ролики продукта, эксплейнеры, B-roll и перебивки для говорящей головы, анимированные графики и цифры, логотип-стинги, плашки с именем (lower third), анимированные субтитры, лупы и GIF, вертикальные Reels/Shorts/TikTok и горизонтальный YouTube. Пишет HTML-композицию, рендерит покадрово в MP4/MOV с альфой/WebM/GIF, синтезирует звуки и музыку с точной сеткой битов, сводит на −14 LUFS и сам проверяет результат цифрами. Use when the user asks to make, plan, storyboard, animate, render, fix or critique a motion graphic, video, promo, reel, intro, outro, captions, overlay, animated chart or any "ролик / видео / анимация / моушн".
 ---
 
 # Motion Studio
@@ -24,8 +24,11 @@ description: Моушн-студия в коде — делает любой р�
 | `node $S/engine/sfx.mjs --all -o assets/sfx` | 14 синтезированных звуков: whoosh, swish, riser, impact, hit, pop, click, tap, tick, type, ding, sparkle, glitch, thump |
 | `node $S/engine/mix.mjs --duration 15 --music m.wav --vo vo.mp3@0.3 --sfx out/video.mp4.events.json --mux out/video.mp4 -o out/final.mp4` | сведение: приглушение музыки под голос, эффекты по меткам, −14 LUFS |
 | `node $S/engine/composite.mjs plan.json -o out/preview.mp4` | вставки и оверлеи поверх исходного видео |
+| `node $S/engine/embed.mjs assets/model.glb` | встроить GLB/картинку в проект (3D открывается двойным кликом) |
+| `node $S/engine/font3d.mjs Brand.ttf -o assets/brand.font.js` | шрифт бренда → 3D-шрифт для объёмного текста |
+| `node $S/engine/serve.mjs videos/<имя>` | локальное превью через http, если браузер блокирует file:// |
 
-Шаблоны (`templates/`): `kinetic-type` · `product-promo` · `stat-chart` · `logo-sting` · `lower-third` · `captions` · `blank`. Любой шаблон рендерится в любом формате (`--format`), вёрстка в единицах `--u`.
+Шаблоны (`templates/`): `kinetic-type` · `product-promo` · `stat-chart` · `logo-sting` · `lower-third` · `captions` · `blank` · **3D:** `3d-hero` · `3d-title` · `3d-cards` (`references/3d.md`). Любой шаблон рендерится в любом формате (`--format`), вёрстка в единицах `--u`.
 
 ## Как работаешь
 
@@ -84,7 +87,10 @@ node $S/engine/qa.mjs videos/<имя>/out/final.mp4 --expect <длина> --expe
 | субтитры/караоке под Reels | `captions` + `words.mjs --embed` → `.mov --alpha` или поверх видео через `composite.mjs` |
 | B-roll/перебивки к говорящей голове | клипы по `playbooks.md#broll` → `composite.mjs` |
 | эксплейнер 30–90 с | несколько сцен из шаблонов в одной композиции, `playbooks.md#explainer` |
-| 3D, шейдеры, частицы | `blank` + three.js/canvas в `comp.onSeek` (`engine-api.md#interop`) |
+| 3D-объект/продукт/иконка, своя GLB-модель | `3d-hero` + `references/3d.md` (модель — Meshy/Spline/Blender → `embed.mjs`) |
+| объёмный заголовок, хром/неон/золото | `3d-title` |
+| пролёт камеры, витрина фич/скриншотов в пространстве | `3d-cards` |
+| шейдеры, частицы, абстракция | любой 3D-шаблон + `MG3.particles`, ShaderMaterial с `uTime` |
 | нужен Remotion/HyperFrames/After Effects | `references/upstream.md` — какие паки поставить и когда |
 
 ## Чего не делать никогда

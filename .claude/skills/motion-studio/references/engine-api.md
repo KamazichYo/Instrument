@@ -63,7 +63,7 @@ const g = gsap.timeline({ paused: true });
 g.from('.title', { y: 100, opacity: 0, duration: 0.6, ease: 'expo.out' });
 comp.onSeek(t => g.seek(t, false));
 ```
-**three.js**: `renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true })`; в `comp.onSeek(t => { mesh.rotation.y = t * 0.8; renderer.render(scene, camera); })`.
+**three.js** встроен: `lib/three/three.mg.js` + `lib/three/mg3d.js` (MG3), API и приёмы в `references/3d.md`. Таймлайн MG анимирует 3D-объекты напрямую: `tl.to(mesh, { y: 1, rotY: 90 })`, `tl.to(S.orbit, { yaw: 30 })`, `tl.to(mesh, { 'material.opacity': 0 })`.
 **Lottie** (lottie-web): `anim = lottie.loadAnimation({ ..., autoplay: false })`; `comp.onSeek(t => anim.goToAndStop(t * 1000, false))`. Для file:// встрои JSON через `animationData`.
 **Canvas 2D / p5 / SVG** — рисуй в `onSeek` из `t`, частицы — из `MG.rng(seed)`.
 **Видео внутри сцены**: `<video src="assets/clip.mp4" data-start="2" muted>` — MG перемотает. Playwright-Chromium может не уметь H.264 → конвертируй в WebM VP9 (`ffmpeg -i in.mp4 -c:v libvpx-vp9 -b:v 0 -crf 30 assets/clip.webm`) или клади футаж через `composite.mjs`.

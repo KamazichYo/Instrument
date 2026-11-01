@@ -21,6 +21,7 @@ if (/Math\.random\(/.test(code)) add('FAIL', 'random', 'Math.random() — кад
 if (/Date\.now\(|performance\.now\(|new Date\(/.test(code.replace(/\/\/.*$/gm, ''))) add('FAIL', 'clock', 'Date/performance.now — анимация должна зависеть только от t в seek(t)');
 if (/setInterval\(|setTimeout\(/.test(code)) add('WARN', 'timers', 'таймеры не управляются seek(t) — анимация через них не попадёт в рендер');
 if (/requestAnimationFrame\(/.test(code) && !/MG\./.test(code)) add('WARN', 'raf', 'requestAnimationFrame-цикл — рисуй в comp.onSeek(t => ...)');
+if (/\.(position|rotation|scale)\.[xyz]\s*[+\-*]=|\.rotate[XYZ]\(|\.translate[XYZ]\(/.test(code)) add('WARN', 'accumulate', '«+=» / rotateX() / translateX() в кадре копят состояние между перемотками — пиши значение из t: pos.y = base + sin(t)');
 if (/transition\s*:/.test(html)) add('WARN', 'css-transition', 'CSS transition не перематывается — используй таймлайн или @keyframes (их MG перематывает)');
 if (/will-change/.test(html)) add('WARN', 'will-change', 'will-change на масштабируемом элементе даёт мыльный текст');
 if (/https?:\/\/(?!www\.w3\.org)/.test(html.replace(/<!--[\s\S]*?-->/g, ''))) add('WARN', 'network', 'внешние ссылки (шрифты/CDN/картинки) — рендер может пойти без них. Положи файлы в assets/');

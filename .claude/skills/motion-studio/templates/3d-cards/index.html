@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="mg:about" content="3D-пролёт сквозь карточки: скриншоты/обложки/фичи висят в пространстве, камера летит и садится на главную карточку, она разворачивается к зрителю">
+<title>3D Cards</title>
+<link rel="stylesheet" href="lib/mg.css">
+<style>
+  #stage { background:#0b0b10; color:#f4f2ee; }
+  .cta { position:absolute; left:0; right:0; bottom:calc(var(--safeB)*1px + var(--u)*2); text-align:center; font:700 calc(var(--u)*5.2)/1.1 var(--display); letter-spacing:-0.03em; }
+  .cta em { font-style:normal; color:var(--accent); }
+</style>
+</head>
+<body>
+<div id="stage"><div class="cta" id="cta"></div></div>
+<script src="lib/mg.js"></script>
+<script src="lib/three/three.mg.js"></script>
+<script src="lib/three/mg3d.js"></script>
+<!-- свои картинки: node engine/embed.mjs assets/shot1.png → <script src="assets/shot1.png.js"></script> -->
+<script>
+// ====== РЕДАКТИРУЙ ЗДЕСЬ ======
+const P = {
+  look: 'studio',
+  accent: '#ff5a1f',
+  // карточка: image — путь к картинке (assets/…, лучше встроить embed.mjs) ИЛИ title/text/color — нарисуется сама
+  cards: [
+    { title: 'Звук', text: 'ИИ-очистка голоса', color: '#ff8a3d' },
+    { title: 'Субтитры', text: 'Whisper, по слову', color: '#4f7cff' },
+    { title: 'Паузы', text: 'вырезаются сами', color: '#22c55e' },
+    { title: '−14 LUFS', text: 'громкость соцсетей', color: '#ffd23f' },
+    { title: 'Офлайн', text: 'всё в телефоне', color: '#a855f7' },
+    { title: 'Графика', text: 'моушн за минуту', color: '#ff2f6d' },
+    { title: 'Instrument', text: 'всё для монтажа', color: '#ff5a1f', hero: true },
+  ],
+  cta: 'Всё для монтажа — <em>в одном месте</em>',
+};
+const DURATION = 8;
+// ===============================
+document.documentElement.style.setProperty('--accent', P.accent);
+document.getElementById('cta').innerHTML = P.cta;
+const comp = MG.comp({ format: '16:9', fps: 30, duration: DURATION });
+const tl = comp.tl();
+comp.setup(async () => {
+  const S = MG3.stage(comp, { look: P.look, fov: 34, camera: [0, 0, 14], fog: [10, 34], bloom: [0.25, 0.5, 0.9] });
+  const T = S.THREE;
+  const CW = 2.4, CH = 1.5, R = MG.rng(11);
+
+  // текстура карточки: картинка или нарисованная (Inter/Unbounded с кириллицей)
+  const drawCard = (c) => MG3.canvasTexture(960, 600, (g, w, h) => {
+    // яркая карточка: цвет → темнее по диагонали, крупный заголовок, подпись
+    const dark = '#' + new T.Color(c.color).multiplyScalar(0.45).getHexString();
+    const grd = g.createLinearGradient(0, 0, w, h); grd.addColorStop(0, c.color); grd.addColorStop(1, dark);
+    g.fillStyle = grd; g.fillRect(0, 0, w, h);
+    const lightCard = new T.Color(c.color).getHSL({}).l > 0.7;
+    g.fillStyle = lightCard ? '#0b0b10' : '#ffffff';
+    g.font = `700 ${c.hero ? 120 : 108}px Unbounded`; g.fillText(c.title, 64, 330, w - 120);
+    g.globalAlpha = 0.72; g.font = '500 48px Inter'; g.fillText(c.text, 68, 420, w - 120); g.globalAlpha = 1;
+    g.fillStyle = lightCard ? 'rgba(0,0,0,.12)' : 'rgba(255,255,255,.18)'; g.beginPath(); g.arc(w - 110, 110, 44, 0, Math.PI * 2); g.fill();
+  });
+  const cards = [];
+  for (const [i, c] of P.cards.entries()) {
+    const tex = c.image ? await MG3.texture(c.image) : drawCard(c);
+    const geo = MG3.roundedBox(CW, CH, 0.06, 0.08, 4);
+    const face = new T.MeshPhysicalMaterial({ map: tex, roughness: 0.35, clearcoat: 0.6, clearcoatRoughness: 0.2 });
+    const edge = new T.MeshStandardMaterial({ color: '#2a2a33', roughness: 0.5, metalness: 0.3 });
+    const m = new T.Mesh(geo, [edge, edge, edge, edge, face, edge]); // грань +Z — лицо
+    m.castShadow = true;
+    // спираль в глубину: карточки уходят от камеры, герой — последний и по центру
+    const k = i / (P.cards.length - 1);
+    if (c.hero) m.position.set(0, 0, -22);
+    else m.position.set(Math.cos(i * 2.1) * (1.9 + R() * 0.6), Math.sin(i * 2.1) * (1.05 + R() * 0.35), 2 - k * 21);
+    m.rotation.set((R() - 0.5) * 0.5, (R() - 0.5) * 0.9 - Math.sign(m.position.x) * 0.25, (R() - 0.5) * 0.2);
+    if (c.hero) m.rotation.set(0, 0, 0);
+    m.userData.hero = !!c.hero; S.add(m); cards.push(m);
+  }
+  const hero = cards.find((m) => m.userData.hero) || cards[cards.length - 1];
+  MG3.particles(S, { count: 500, spread: [14, 9, 40], color: '#ffffff', opacity: 0.3, size: 4 });
+
+  // карточки «оживают» по очереди — появляются, когда камера подлетает
+  cards.forEach((m, i) => { if (m !== hero) tl.from(m, { scale: 0.6, rotY: 70 }, { at: 0.1 + i * 0.35, dur: 0.9, ease: 'land' }); });
+  // лёгкое парение: позиция = база + функция времени (никаких +=, иначе кадры зависят от истории перемотки)
+  cards.forEach((m) => (m.userData.y0 = m.position.y));
+  S.onFrame((t) => cards.forEach((m, i) => { if (m !== hero) m.position.y = m.userData.y0 + Math.sin(t * 0.9 + i) * 0.08; }));
+
+  // КАМЕРА: пролёт сквозь спираль, лёгкий крен, торможение у героя
+  tl.fromTo(S.camera.position, { x: 1.2, y: 0.6, z: 14 }, { x: 0, y: 0, z: -22 + (comp.portrait ? 6.5 : 4.2) }, { at: 0, dur: 5.6, ease: [0.45, 0, 0.15, 1] });
+  tl.fromTo(S.target, { x: 0, y: 0, z: 0 }, { x: 0, y: comp.portrait ? -0.75 : -0.42, z: -22 }, { at: 0, dur: 5.2, ease: [0.4, 0, 0.2, 1] });
+  for (let i = 1; i < cards.length; i++) comp.mark(i * 0.7, 'whoosh', { gain: -12 });
+  // ГЕРОЙ: разворот к зрителю и «посадка»
+  tl.fromTo(hero, { rotY: -180, rotX: 12, scale: 0.8 }, { rotY: 0, rotX: 0, scale: 1 }, { at: 3.2, dur: 2.2, ease: 'land' });
+  comp.mark(5.5, 'impact');
+  tl.to(hero, { scale: 1.06 }, { at: 5.8, dur: 2.2, ease: 'linear' });
+  // CTA
+  const w = MG.split('#cta', 'words');
+  tl.from(w, { y: 30, opacity: 0, blur: 10 }, { at: 5.9, dur: 0.6, ease: 'land', stagger: 0.09 });
+});
+</script>
+</body>
+</html>

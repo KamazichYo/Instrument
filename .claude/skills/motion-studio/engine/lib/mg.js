@@ -118,7 +118,8 @@
     if (!t) return [];
     if (typeof t === 'string') return Array.from(ROOT.querySelectorAll(t));
     if (t instanceof Element) return [t];
-    if (t.length !== undefined) return Array.from(t).flatMap((x) => (typeof x === 'string' ? Array.from(ROOT.querySelectorAll(x)) : [x]));
+    // списки: массивы, NodeList, HTMLCollection (а не Vector3 с методом length())
+    if (Array.isArray(t) || (typeof NodeList !== 'undefined' && t instanceof NodeList) || (typeof HTMLCollection !== 'undefined' && t instanceof HTMLCollection)) return Array.from(t).flatMap((x) => (typeof x === 'string' ? Array.from(ROOT.querySelectorAll(x)) : [x]));
     return [t];
   };
 
@@ -168,9 +169,33 @@
     }
   }
 
+  // ---------- не-DOM цели: three.js-объекты, униформы, любые JS-объекты ----------
+  const isEl = (o) => typeof Element !== 'undefined' && o instanceof Element;
+  const DEG = Math.PI / 180;
+  // сокращения для THREE.Object3D: x/y/z → position, rotX/rotY/rotZ (градусы) → rotation, scale → scale (все оси)
+  const OBJ3D = { x: 'position.x', y: 'position.y', z: 'position.z', rotX: 'rotation.x', rotY: 'rotation.y', rotZ: 'rotation.z', scaleX: 'scale.x', scaleY: 'scale.y', scaleZ: 'scale.z' };
+  function objPath(o, k) { return o && o.isObject3D && OBJ3D[k] ? OBJ3D[k] : k; }
+  function getObj(o, k) {
+    if (o && o.isObject3D && k === 'scale') return o.scale.x;
+    const path = objPath(o, k).split('.'); let v = o;
+    for (const p of path) v = v == null ? undefined : v[p];
+    if (v && v.isColor) return '#' + v.getHexString();
+    if (o && o.isObject3D && /^rot[XYZ]$/.test(k)) return v / DEG;
+    return v;
+  }
+  function setObj(o, k, val) {
+    if (o && o.isObject3D && k === 'scale') { o.scale.setScalar(val.n); return; }
+    const path = objPath(o, k).split('.'); let t = o;
+    for (let i = 0; i < path.length - 1; i++) t = t[path[i]];
+    const last = path[path.length - 1], cur = t[last];
+    if (cur && cur.isColor && val.c) { cur.setStyle(`rgb(${Math.round(val.c[0])},${Math.round(val.c[1])},${Math.round(val.c[2])})`); return; }
+    if (val.n === undefined) { t[last] = val.raw; return; }
+    t[last] = o && o.isObject3D && /^rot[XYZ]$/.test(k) ? val.n * DEG : val.n;
+  }
+
   // ---------- timeline ----------
   class Timeline {
-    constructor() { this.tweens = []; this.calls = []; this.built = false; this.cursor = 0; }
+    constructor() { this.tweens = []; this.calls = []; this.built = false; this.cursor = 0; this.orig = new WeakMap(); }
     _add(targets, from, to, o = {}) {
       const els = toEls(targets);
       const ease = resolveEase(o.ease ?? 'land');
@@ -183,6 +208,12 @@
       if (st.from === 'end') order.reverse();
       if (st.from === 'center') order.sort((a, b) => Math.abs(a - (n - 1) / 2) - Math.abs(b - (n - 1) / 2));
       if (st.from === 'random') { const r = rng(st.seed || 7); order.sort(() => r() - 0.5); }
+      // исходные значения не-DOM целей запоминаем при добавлении (до любых перемоток)
+      for (const el of els) if (!isEl(el)) {
+        if (!this.orig.has(el)) this.orig.set(el, {});
+        const rec = this.orig.get(el);
+        for (const key of new Set([...Object.keys(from || {}), ...Object.keys(to || {})])) if (!(key in rec)) rec[key] = getObj(el, key);
+      }
       order.forEach((idx, k) => {
         this.tweens.push({ el: els[idx], from, to, at: at + k * each, dur, ease, i: this.tweens.length });
       });
@@ -230,9 +261,11 @@
           (props[k] = props[k] || []).push({ tw, k });
         }
       }
-      for (const [, props] of map) {
+      for (const [el, props] of map) {
+        const rec = isEl(el) ? null : this.orig.get(el) || {};
         for (const k in props) {
-          let prev = null; const base = DEFAULTS[k] !== undefined && DEFAULTS[k] !== null ? parseVal(DEFAULTS[k]) : null;
+          let prev = null;
+          const base = rec ? (rec[k] !== undefined ? parseVal(rec[k]) : null) : DEFAULTS[k] !== undefined && DEFAULTS[k] !== null ? parseVal(DEFAULTS[k]) : null;
           for (const seg of props[k]) {
             const f = seg.tw.from && seg.tw.from[k] !== undefined ? parseVal(seg.tw.from[k]) : (prev || base || parseVal(0));
             const tt = seg.tw.to && seg.tw.to[k] !== undefined ? parseVal(seg.tw.to[k]) : (prev || base || f);
@@ -245,6 +278,7 @@
     seek(t) {
       if (!this.built) this._build();
       for (const [el, props] of this.map) {
+        const dom = isEl(el);
         const st = { css: {} };
         for (const k in props) {
           const segs = props[k];
@@ -258,9 +292,10 @@
             const e = tw.ease.isSpring ? tw.ease(p, tw.dur) : tw.ease(p);
             v = interp(seg.a, seg.b, e);
           }
-          if (TRANSFORM.has(k) || FILTER.has(k) || CLIP.has(k) || k === 'opacity' || k === 'radius') st[k] = v.n; else st.css[k] = v;
+          if (!dom) setObj(el, k, v);
+          else if (TRANSFORM.has(k) || FILTER.has(k) || CLIP.has(k) || k === 'opacity' || k === 'radius') st[k] = v.n; else st.css[k] = v;
         }
-        applyState(el, st);
+        if (dom) applyState(el, st);
       }
       for (const c of this.calls) {
         const local = t - c.at, p = c.dur <= 0 ? (local >= 0 ? 1 : 0) : clamp(local / c.dur);

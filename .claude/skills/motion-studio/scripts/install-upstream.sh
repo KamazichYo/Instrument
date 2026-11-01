@@ -28,6 +28,9 @@ declare -A REPO=(
   [iart]="iart-ai/motion-skills|."
   [motionprinciples]="kylezantos/design-motion-principles|."
   [herk]="nateherkai/herk-edit-kit|."
+  [3dviz]="viettranx/3dviz-pro-max|skills"
+  [threejs]="scottstts/Threejs-Awesome-Graphics-Agent-Skills|skills"
+  [blender]="arjun988/blender-skills|."
 )
 declare -A ABOUT=(
   [hyperframes]="HeyGen HyperFrames (77k★, Apache-2.0): HTML→видео, 450 блоков, реверс любого видео, Figma"
@@ -43,6 +46,9 @@ declare -A ABOUT=(
   [iart]="iart.ai (1.1k★, MIT): 50 скиллов — кинетика, дата-виз, переходы"
   [motionprinciples]="design-motion-principles (1.5k★, MIT): моушн для UI-компонентов + аудит"
   [herk]="Herk Edit Kit (2.5k★): монтаж Reels/Shorts — транскрипт, нарезка, 15 скиллов"
+  [3dviz]="3dviz-pro-max (1k★, MIT): режиссура 3D-сцен three.js/Blender"
+  [threejs]="Threejs-Awesome-Graphics (1k★, MIT): процедурные материалы, вода, облака, планеты"
+  [blender]="blender-skills (1.6k★, MIT): 94 скилла для Blender через MCP (нужен mcp-for-blender)"
 )
 RECOMMENDED="hyperframes remotion bart motionmaxxing lottie"
 

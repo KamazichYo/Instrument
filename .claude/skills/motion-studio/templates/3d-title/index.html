@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="mg:about" content="Объёмный 3D-заголовок (кириллица): буквы прилетают из глубины с вращением, хром/глянец/стекло/неон, отражающий пол, блик, подзаголовок">
+<title>3D Title</title>
+<link rel="stylesheet" href="lib/mg.css">
+<style>
+  #stage { background:#050507; color:#f4f2ee; }
+  .sub { position:absolute; left:0; right:0; bottom:calc(var(--safeB)*1px + var(--u)*3); text-align:center; font:500 calc(var(--u)*3.4)/1.3 var(--sans); letter-spacing:0.01em; color:rgba(244,242,238,.75); }
+  .mg-portrait .sub { bottom:calc(var(--safeB)*1px + var(--u)*10); padding:0 calc(var(--safeR)*1px); }
+</style>
+</head>
+<body>
+<div id="stage"><div class="sub" id="sub"></div></div>
+<script src="lib/mg.js"></script>
+<script src="lib/three/three.mg.js"></script>
+<script src="lib/three/inter-display-black.font.js"></script>
+<script src="lib/three/mg3d.js"></script>
+<script>
+// ====== РЕДАКТИРУЙ ЗДЕСЬ ======
+const P = {
+  text: 'МОУШН',                  // 1 слово, до ~8 букв (в вертикали — до 5–6)
+  sub: 'графика, которая двигает продажи',
+  style: 'chrome',                // chrome · glossy · glass · neon · gold
+  color: '#ff5a1f',               // для glossy/neon
+  look: 'noir',                   // studio · bright · neon · sunset · noir
+};
+const DURATION = 6;
+// ===============================
+document.getElementById('sub').textContent = P.sub;
+const comp = MG.comp({ format: '16:9', fps: 30, duration: DURATION });
+const tl = comp.tl();
+comp.setup(() => {
+  const S = MG3.stage(comp, { look: P.style === 'neon' ? 'neon' : P.look, floor: { y: -1.0, shadow: 0.5 }, camera: [0, 0.5, 12], target: [0, -0.35, 0], fov: 28,
+    bloom: P.style === 'neon' ? [0.55, 0.45, 0.82] : [0.3, 0.4, 0.9] });
+  const T = S.THREE;
+  const face = { chrome: MG3.mat.chrome(), glossy: MG3.mat.glossy(P.color), glass: MG3.mat.glass('#dfeeff', { thickness: 1.2 }), neon: MG3.mat.emissive(P.color, 1.8), gold: MG3.mat.gold() }[P.style];
+  const side = P.style === 'neon' ? MG3.mat.glossy('#15151a', { roughness: 0.4 }) : face;
+  const word = MG3.text3d(P.text, { font: 'inter-display-black', size: 1.5, depth: 0.5, bevel: 0.04, material: face, sideMaterial: side, tracking: 0.02 });
+  // подогнать слово под кадр: ширина ≤ 70% (вертикаль — 86%) видимой области
+  const dist = S.camera.position.distanceTo(S.target);
+  const visW = 2 * Math.tan((S.camera.fov * Math.PI) / 360) * dist * (comp.width / comp.height);
+  const k = Math.min(1, (visW * (comp.portrait ? 0.86 : 0.7)) / word.width);
+  word.group.scale.setScalar(k);
+  S.add(word.group);
+  // пол — ровно под буквами; отражение в чёрном глянце
+  const floorY = -(word.height * k) / 2 - 0.02;
+  S.floor.position.y = floorY;
+  MG3.reflect(S, word.group, { y: floorY, opacity: P.style === 'neon' ? 0.16 : 0.12 });
+
+  // свет-полоса за словом: тонкий светящийся «горизонт»
+  const bar = new T.Mesh(new T.PlaneGeometry(30, 0.04), new T.MeshBasicMaterial({ color: P.style === 'neon' ? P.color : '#ffffff', transparent: true, opacity: 0.8 }));
+  bar.position.set(0, floorY, -4); S.add(bar);
+  MG3.particles(S, { count: 300, spread: [16, 8, 12], color: '#ffffff', opacity: 0.35, size: 4 });
+
+  // БУКВЫ: из глубины, с вращением по X, стаггер от центра — центральные первыми
+  const L = word.letters, mid = (L.length - 1) / 2;
+  const order = L.map((_, i) => i).sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid));
+  order.forEach((i, k2) => {
+    const m = L[i], at = 0.25 + k2 * 0.09;
+    tl.fromTo(m, { z: -14, y: m.position.y + 2.2 * (i % 2 ? 1 : -1), rotX: i % 2 ? 160 : -160, rotY: (i - mid) * 25 }, { z: 0, y: m.position.y, rotX: 0, rotY: 0 }, { at, dur: 1.05, ease: 'land' });
+    comp.mark(at, 'swish', { gain: -14 });
+  });
+  const landed = 0.25 + (L.length - 1) * 0.09 + 1.0;
+  comp.mark(landed - 0.05, 'impact');
+  // волна после приземления: каждая буква чуть «кивает»
+  L.forEach((m, i) => tl.fromTo(m, { rotX: 0 }, { rotX: -14 }, { at: landed + i * 0.05, dur: 0.18, ease: 'out' }).to(m, { rotX: 0 }, { at: landed + i * 0.05 + 0.18, ease: { spring: { stiffness: 260, damping: 12 } } }));
+
+  // КАМЕРА: низкий ракурс, медленный наезд и подъём — слово «вырастает»
+  tl.fromTo(S.camera.position, { x: -2.5, y: -0.2, z: 15 }, { x: 0.8, y: 0.9, z: comp.portrait ? 12.5 : 11 }, { at: 0, dur: DURATION, ease: 'glide' });
+  // блик: ключевой свет проезжает слева направо — по хрому бежит отражение
+  tl.fromTo(S.key.position, { x: -9 }, { x: 9 }, { at: landed - 0.2, dur: 1.6, ease: 'glide' });
+  comp.mark(landed + 0.1, 'sparkle');
+  tl.fromTo(bar.scale, { x: 0 }, { x: 1 }, { at: landed - 0.3, dur: 1.0, ease: 'land' });
+
+  tl.from('#sub', { y: 24, opacity: 0, blur: 8 }, { at: landed + 0.35, dur: 0.7, ease: 'land' });
+});
+</script>
+</body>
+</html>

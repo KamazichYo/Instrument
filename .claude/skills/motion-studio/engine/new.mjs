@@ -28,7 +28,9 @@ if (!dest) { console.error('Укажи папку проекта'); process.exit
 if (fs.existsSync(path.join(dest, 'index.html')) && !o.force) { console.error(`${dest}/index.html уже есть (--force чтобы перезаписать)`); process.exit(2); }
 fs.mkdirSync(dest, { recursive: true });
 fs.cpSync(path.join(tplRoot, tpl), dest, { recursive: true });
-fs.cpSync(path.join(here, 'lib'), path.join(dest, 'lib'), { recursive: true });
+// 3D-библиотека (1 МБ) копируется только в 3D-проекты
+const uses3d = fs.readFileSync(path.join(dest, 'index.html'), 'utf8').includes('lib/three/');
+fs.cpSync(path.join(here, 'lib'), path.join(dest, 'lib'), { recursive: true, filter: (src) => uses3d || !src.includes(`${path.sep}three`) });
 if (o.format) {
   const f = path.join(dest, 'index.html');
   fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/format:\s*'[^']+'/, `format: '${o.format}'`));

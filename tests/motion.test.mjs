@@ -49,3 +49,13 @@ test('FFT находит частоту синуса', () => {
   let best = 0; for (let k = 1; k < n / 2; k++) if (Math.hypot(re[k], im[k]) > Math.hypot(re[best], im[best])) best = k;
   assert.equal(best, 64);
 });
+
+test('3D-шрифты: кириллица и латиница на месте', async () => {
+  const fs = await import('node:fs');
+  for (const f of ['inter-display-bold', 'inter-display-black']) {
+    const src = fs.readFileSync(new URL(`../.claude/skills/motion-studio/engine/lib/three/${f}.font.js`, import.meta.url), 'utf8');
+    const json = JSON.parse(src.slice(src.indexOf('] = ') + 4, src.lastIndexOf(';')));
+    for (const ch of 'АЯЁжщМОУШНInstrument0123456789') assert.ok(json.glyphs[ch] && json.glyphs[ch].ha > 0, `${f}: нет «${ch}»`);
+    assert.equal(json.resolution, 1000);
+  }
+});
